@@ -99,6 +99,7 @@ function PocketApp() {
     setShowInstall(false);
   }
   const pushTimerRef = _urA(null);
+  const applyingRemoteRef = _urA(false); // true = state นี้มาจาก server, อย่า push กลับ (กัน echo loop)
 
   // Load from Supabase on mount — show error screen if fails (no silent fallback)
   function loadFromSupabase() {
@@ -106,6 +107,7 @@ function PocketApp() {
     setSyncOnline(false);
     CTRLS.pullRemoteState()
       .then(({ state: remoteState }) => {
+        applyingRemoteRef.current = true;
         setState(remoteState);
         setSyncOnline(true);
         setSyncError(null);
