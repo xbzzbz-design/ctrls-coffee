@@ -121,7 +121,7 @@ function PocketApp() {
 
     // Realtime: update state directly from server — no local merge
     const unsubscribe = CTRLS.subscribeRemoteState(
-      (remoteState) => { setState(remoteState); setSyncOnline(true); },
+      (remoteState) => { applyingRemoteRef.current = true; setState(remoteState); setSyncOnline(true); },
       (err) => { console.warn('CTRL+S realtime issue:', err); setSyncOnline(false); setSyncError('realtime หลุด — โหลดใหม่เพื่ออัปเดต'); }
     );
 
@@ -134,6 +134,7 @@ function PocketApp() {
   // Push to Supabase whenever state changes (debounced 350ms)
   _ueA(() => {
     if (!state || !syncOnline) return;
+    if (applyingRemoteRef.current) { applyingRemoteRef.current = false; return; } // state จาก server — ไม่ต้อง push กลับ
     if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
     pushTimerRef.current = setTimeout(() => {
       CTRLS.pushRemoteState(state)
@@ -178,7 +179,7 @@ function PocketApp() {
   }
 
   // === Loading / error gate (Supabase first) ===
-  if (loadError) return <ErrorScreen error={loadError} onRetry={loadFromSupabase} />;
+  if (loadError) return <ErrorScreen error={loadError} onRetry={() => window.location.reload()} />;
   if (!state) return <LoadingScreen />;
 
   // === Identity gate ===
