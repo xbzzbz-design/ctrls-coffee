@@ -2911,6 +2911,18 @@ input, textarea, select { font: inherit; color: inherit; }
   line-height: 1;
 }
 
+/* === Loading / Error screens === */
+.loading-screen {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--cream, #F6F1E8);
+  padding: 32px;
+  text-align: center;
+}
+
 
 </style>
 </head>
@@ -3016,17 +3028,8 @@ window.CTRLS_SUPABASE = {
     barista: { name: 'Boss', shopName: 'CTRL+S Coffee', promptPay: '081-234-5678', baristaPin: '1337', featuredAsap: null, todayNote: { enabled: false, title: "today's note", body: '' } },
   };
 
-  function load() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return JSON.parse(JSON.stringify(DEFAULT_STATE));
-      const parsed = JSON.parse(raw);
-      return { ...DEFAULT_STATE, ...parsed, barista: { ...DEFAULT_STATE.barista, ...(parsed.barista || {}) } };
-    } catch (e) {
-      return JSON.parse(JSON.stringify(DEFAULT_STATE));
-    }
-  }
-  function save(state) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {} }
+  function load() { return JSON.parse(JSON.stringify(DEFAULT_STATE)); }
+  function save(_state) {} // state lives in Supabase — localStorage no longer used as primary store
 
   // === Optional Supabase shared state ===
   const DEFAULT_REMOTE_CONFIG = { url: '', anonKey: '', table: 'ctrls_state', rowId: 'main' };
@@ -3083,10 +3086,10 @@ window.CTRLS_SUPABASE = {
     return remote;
   }
 
-  async function pullRemoteState(localState) {
+  async function pullRemoteState() {
     const client = remoteClient();
     const cfg = remoteConfig();
-    if (!client) return { state: normalizeState(localState), ready: false, created: false };
+    if (!client) throw new Error('Supabase client not available');
 
     const { data, error } = await client
       .from(cfg.table)
@@ -3096,11 +3099,11 @@ window.CTRLS_SUPABASE = {
 
     if (error) throw error;
     if (!data) {
-      const initial = normalizeState(localState);
+      const initial = normalizeState({});
       await pushRemoteState(initial);
-      return { state: initial, ready: true, created: true };
+      return { state: initial, created: true };
     }
-    return { state: adoptRemoteState(localState, data.state), ready: true, created: false };
+    return { state: normalizeState(data.state), created: false };
   }
 
   async function pushRemoteState(state) {
@@ -5563,7 +5566,7 @@ function CustomerPocket({ state, setState, profile, setProfile, openProfile }) {
   function retryOrderSync(orderIds) {
     if (!orderIds || !CTRLS.remoteEnabled()) { setCheckout((c) => (c && c.step === 'done') ? { ...c, sync: 'offline' } : c); return; }
     setCheckout((c) => (c && c.step === 'done') ? { ...c, sync: 'sending' } : c);
-    CTRLS.confirmOrders(CTRLS.load(), orderIds)
+    CTRLS.confirmOrders(state, orderIds)
       .then((r) => setCheckout((c) => (c && c.step === 'done') ? { ...c, sync: r.ok ? 'sent' : 'failed' } : c))
       .catch(() => setCheckout((c) => (c && c.step === 'done') ? { ...c, sync: 'failed' } : c));
   }
@@ -7625,11 +7628,31 @@ function PocketTopBar({ view, setView, theme, setTheme }) {
   );
 }
 
+function LoadingScreen() {
+  return (
+    <div className="loading-screen">
+      <div style={{ fontSize: 48 }}>☕</div>
+      <div className="h-hand" style={{ marginTop: 16, fontSize: 18 }}>กำลังโหลด...</div>
+    </div>
+  );
+}
+
+function ErrorScreen({ error, onRetry }) {
+  return (
+    <div className="loading-screen">
+      <div style={{ fontSize: 40 }}>⚠️</div>
+      <div className="h-hand" style={{ marginTop: 16, fontSize: 17 }}>{error}</div>
+      <div className="mono dim" style={{ fontSize: 12, marginTop: 6 }}>ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่</div>
+      <button className="btn-primary" style={{ marginTop: 24 }} onClick={onRetry}>ลองใหม่</button>
+    </div>
+  );
+}
+
 function PocketApp() {
-  const [state, setState] = _usA(() => CTRLS.load());
-  // The "active code" pointer lives in localStorage. Profile is derived from state.profiles[code].
-  const [tick, setTick] = _usA(0); // force re-render when code changes
-  const profile = _umA(() => CTRLS.getActiveProfile(state), [state, tick]);
+  const [state, setState] = _usA(null); // null = loading from Supabase
+  const [loadError, setLoadError] = _usA(null);
+  const [tick, setTick] = _usA(0);
+  const profile = _umA(() => state ? CTRLS.getActiveProfile(state) : null, [state, tick]);
 
   const [view, setView] = _usA(() => {
     try {
@@ -7644,7 +7667,6 @@ function PocketApp() {
   const [profileOpen, setProfileOpen] = _usA(false);
   const [syncError, setSyncError] = _usA(null);
   const [syncOnline, setSyncOnline] = _usA(false);
-  const syncReadyRef = _urA(false);
 
   // PWA install prompt
   const installPromptRef = _urA(null);
@@ -7682,36 +7704,32 @@ function PocketApp() {
     localStorage.setItem('ctrls_install_dismissed', '1');
     setShowInstall(false);
   }
-  const skipNextPushRef = _urA(false);
   const pushTimerRef = _urA(null);
 
-  _ueA(() => {
-    let unsubscribe = () => {};
-    if (!CTRLS.remoteEnabled()) {
-      setSyncOnline(false);
-      setSyncError('ยังไม่ได้เชื่อมต่อเซิร์ฟเวอร์ — ข้อมูลถูกเก็บในเครื่องนี้เท่านั้น');
-      return unsubscribe;
-    }
-
-    CTRLS.pullRemoteState(state)
+  // Load from Supabase on mount — show error screen if fails (no silent fallback)
+  function loadFromSupabase() {
+    setLoadError(null);
+    setSyncOnline(false);
+    CTRLS.pullRemoteState()
       .then(({ state: remoteState }) => {
-        skipNextPushRef.current = true;
-        syncReadyRef.current = true;
-        setSyncError(null);
-        setSyncOnline(true);
-        CTRLS.save(remoteState);
         setState(remoteState);
-        unsubscribe = CTRLS.subscribeRemoteState(
-          (remoteState) => {
-            const nextState = CTRLS.adoptRemoteState(CTRLS.load(), remoteState);
-            skipNextPushRef.current = true;
-            CTRLS.save(nextState);
-            setState(nextState);
-          },
-          (err) => { console.warn('CTRL+S Supabase realtime issue:', err); setSyncError('realtime หลุด — ออเดอร์ใหม่จากเครื่องอื่นอาจไม่เด้งทันที'); }
-        );
+        setSyncOnline(true);
+        setSyncError(null);
       })
-      .catch((err) => { console.warn('CTRL+S Supabase sync disabled:', err); setSyncOnline(false); setSyncError('ออฟไลน์ — ข้อมูลยังไม่ได้ sync ขึ้นเซิร์ฟเวอร์'); });
+      .catch((err) => {
+        console.warn('CTRL+S load failed:', err);
+        setLoadError('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — กรุณาตรวจสอบอินเทอร์เน็ต');
+      });
+  }
+
+  _ueA(() => {
+    loadFromSupabase();
+
+    // Realtime: update state directly from server — no local merge
+    const unsubscribe = CTRLS.subscribeRemoteState(
+      (remoteState) => { setState(remoteState); setSyncOnline(true); },
+      (err) => { console.warn('CTRL+S realtime issue:', err); setSyncOnline(false); setSyncError('realtime หลุด — โหลดใหม่เพื่ออัปเดต'); }
+    );
 
     return () => {
       if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
@@ -7719,18 +7737,14 @@ function PocketApp() {
     };
   }, []);
 
+  // Push to Supabase whenever state changes (debounced 350ms)
   _ueA(() => {
-    CTRLS.save(state);
-    if (skipNextPushRef.current) {
-      skipNextPushRef.current = false;
-      return;
-    }
-    if (!syncReadyRef.current || !CTRLS.remoteEnabled()) return;
+    if (!state || !syncOnline) return;
     if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
     pushTimerRef.current = setTimeout(() => {
       CTRLS.pushRemoteState(state)
         .then(() => { setSyncError(null); setSyncOnline(true); })
-        .catch((err) => { console.warn('CTRL+S Supabase push failed:', err); setSyncOnline(false); setSyncError('บันทึกขึ้นเซิร์ฟเวอร์ไม่สำเร็จ — กำลังเก็บไว้ในเครื่องชั่วคราว'); });
+        .catch((err) => { console.warn('CTRL+S push failed:', err); setSyncOnline(false); setSyncError('บันทึกไม่สำเร็จ — กรุณาโหลดใหม่'); });
     }, 350);
   }, [state]);
   _ueA(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
@@ -7768,6 +7782,10 @@ function PocketApp() {
     setTick((t) => t + 1);
     setProfileOpen(false);
   }
+
+  // === Loading / error gate (Supabase first) ===
+  if (loadError) return <ErrorScreen error={loadError} onRetry={loadFromSupabase} />;
+  if (!state) return <LoadingScreen />;
 
   // === Identity gate ===
   if (!profile) {
