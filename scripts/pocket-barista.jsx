@@ -1,0 +1,919 @@
+// CTRL+S Pocket — barista flow: PIN gate, queue, menu mgmt, schedule, summary.
+
+const { useState: _usB, useEffect: _ueB, useMemo: _umB } = React;
+
+// === PIN gate ===
+function BaristaPinGate({ state, onUnlock }) {
+  const [pin, setPin] = _usB('');
+  const [bad, setBad] = _usB(false);
+  function submit() {
+    if (pin === state.barista.baristaPin) {
+      try { sessionStorage.setItem('ctrls_barista_session', '1'); } catch {}
+      onUnlock();
+    } else {
+      setBad(true);
+      setTimeout(() => setBad(false), 300);
+      setPin('');
+    }
+  }
+  return (
+    <div className="pin-gate">
+      <div className="brand-stack" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <CursorArrow size={18} color="var(--charcoal)" />
+        <span className="h-doodle" style={{ fontSize: 26 }}>CTRL<span style={{ color: 'var(--mustard)' }}>+S</span></span>
+      </div>
+      <div className="pin-card">
+        <div className="h-doodle" style={{ fontSize: 24 }}>barista only</div>
+        <div className="h-hand" style={{ fontSize: 14, color: 'var(--brown)', margin: '4px 0 8px' }}>punch in your PIN to access the kitchen</div>
+        <input
+          className={`pin-input ${bad ? 'bad' : ''}`}
+          type="password"
+          maxLength="4"
+          value={pin}
+          autoFocus
+          onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+          onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+          placeholder="• • • •"
+        />
+        <button className="btn-primary" onClick={submit} disabled={pin.length < 3}>unlock →</button>
+        <div className="footnote mono" style={{ padding: '12px 0 0' }}>hint · default is 1337 · change in settings tab</div>
+      </div>
+    </div>
+  );
+}
+
+// === Barista root ===
+function BaristaPocket({ state, setState, profile, onLock }) {
+  const [tab, setTab] = _usB('queue');
+  return (
+    <div className="barista-scroll no-scrollbar">
+      <div className="barista-head">
+        <div>
+          <div className="mono dim">{(() => { const h = new Date().getHours(); return h < 11 ? 'good morning' : h < 17 ? 'good afternoon' : 'good evening'; })()}</div>
+          <div className="h-doodle" style={{ fontSize: 30 }}>{state.barista.name} ☕</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <CatSleepy size={48} />
+          <button className="x-big" onClick={onLock} title="lock">🔒</button>
+        </div>
+      </div>
+      <div className="barista-tabs">
+        {[
+          { id: 'queue', label: 'queue' },
+          { id: 'billing', label: 'billing' },
+          { id: 'people', label: 'people' },
+          { id: 'summary', label: 'summary' },
+          { id: 'menu', label: 'menu' },
+          { id: 'asap', label: 'asap' },
+          { id: 'schedule', label: 'schedule' },
+        ].map((t) => (
+          <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {tab === 'queue' && <QueueTab state={state} setState={setState} />}
+      {tab === 'billing' && <BillingTab state={state} />}
+      {tab === 'people' && <PeopleTab state={state} setState={setState} profile={profile} />}
+      {tab === 'summary' && <SummaryTab state={state} />}
+      {tab === 'menu' && <MenuTab state={state} setState={setState} />}
+      {tab === 'asap' && <AsapTab state={state} setState={setState} />}
+      {tab === 'schedule' && <ScheduleTab state={state} setState={setState} />}
+    </div>
+  );
+}
+
+// === People tab — customer visibility + lightweight stats ===
+function PeopleTab({ state, setState, profile }) {
+  const people = _umB(() => {
+    const map = {};
+    Object.values(state.profiles || {}).forEach((p) => {
+      const id = p.id || p.code;
+      if (!id) return;
+      map[id] = {
+        id,
+        name: p.name || 'friend',
+        avatar: p.avatar || CTRLS.DEFAULT_AVATAR,
+        profile: p,
+        source: 'profile',
+      };
+    });
+    (state.orders || []).forEach((o) => {
+      if (!o.profileId || map[o.profileId]) return;
+      map[o.profileId] = {
+        id: o.profileId,
+        name: o.name || 'friend',
+        avatar: o.avatar || CTRLS.DEFAULT_AVATAR,
+        profile: null,
+        source: 'orders',
+      };
+    });
+    return Object.values(map)
+      .filter((p) => !(state.peopleMeta || {})[p.id]?.deleted)
+      .map((p) => {
+        const orders = (state.orders || []).filter((o) => CTRLS.isConfirmedOrder(o) && o.profileId === p.id);
+        const cups = orders.reduce((s, o) => s + CTRLS.cupQty(o), 0);
+        const spent = orders.reduce((s, o) => s + CTRLS.orderTotal(state, o), 0);
+        const drinkMap = {};
+        orders.forEach((o) => (o.items || []).forEach((it) => {
+          const label = CTRLS.itemLabel(state, it);
+          drinkMap[label] = (drinkMap[label] || 0) + (it.qty || 1);
+        }));
+        const topDrinks = Object.entries(drinkMap)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([label, count]) => ({ label, count }));
+        return {
+          ...p,
+          orders,
+          cups,
+          spent,
+          topDrinks,
+          hiddenFromGift: Boolean((state.peopleMeta || {})[p.id]?.hiddenFromGift),
+          isCurrent: p.id === profile.id,
+        };
+      })
+      .sort((a, b) => b.cups - a.cups || a.name.localeCompare(b.name));
+  }, [state.profiles, state.orders, state.peopleMeta, profile.id]);
+
+  const visibleCount = people.filter((p) => !p.hiddenFromGift).length;
+  const hiddenCount = people.length - visibleCount;
+
+  function patchPerson(id, patch) {
+    setState((s) => ({
+      ...s,
+      peopleMeta: {
+        ...(s.peopleMeta || {}),
+        [id]: { ...((s.peopleMeta || {})[id] || {}), ...patch },
+      },
+    }));
+  }
+
+  function deletePerson(person) {
+    if (!confirm(`Delete ${person.name} from people? Orders stay in history.`)) return;
+    setState((s) => {
+      const profiles = { ...(s.profiles || {}) };
+      delete profiles[person.id];
+      return {
+        ...s,
+        profiles,
+        peopleMeta: {
+          ...(s.peopleMeta || {}),
+          [person.id]: { ...((s.peopleMeta || {})[person.id] || {}), deleted: true, hiddenFromGift: true },
+        },
+      };
+    });
+  }
+
+  return (
+    <div>
+      <div className="people-summary">
+        <div>
+          <div className="h-doodle" style={{ fontSize: 30 }}>{people.length}</div>
+          <div className="mono dim">people</div>
+        </div>
+        <div>
+          <div className="h-doodle" style={{ fontSize: 30 }}>{visibleCount}</div>
+          <div className="mono dim">gift-visible</div>
+        </div>
+        <div>
+          <div className="h-doodle" style={{ fontSize: 30 }}>{hiddenCount}</div>
+          <div className="mono dim">hidden</div>
+        </div>
+      </div>
+
+      {people.length === 0 ? (
+        <div className="empty-state">
+          <CatSleepy size={72} />
+          <div className="h-hand" style={{ fontSize: 18 }}>no profiles yet</div>
+          <div className="mono dim">customers appear after creating a profile</div>
+        </div>
+      ) : (
+        <div className="people-list">
+          {people.map((p) => (
+            <div key={p.id} className={`people-card ${p.hiddenFromGift ? 'hidden' : ''}`}>
+              <div className="people-main">
+                <CatAvatar avatar={p.avatar || CTRLS.DEFAULT_AVATAR} size={44} />
+                <div className="people-mid">
+                  <div className="people-name-row">
+                    <span className="h-hand" style={{ fontSize: 18 }}>{p.name}</span>
+                    {p.isCurrent && <span className="people-tag mono">you</span>}
+                    {p.source === 'orders' && <span className="people-tag mono">order-only</span>}
+                    {p.hiddenFromGift && <span className="people-tag muted mono">hidden</span>}
+                  </div>
+                  <div className="mono dim" style={{ fontSize: 10 }}>
+                    {p.cups} cup{p.cups !== 1 ? 's' : ''} · {p.orders.length} order{p.orders.length !== 1 ? 's' : ''} · ฿{formatBaht(p.spent)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="people-topdrinks">
+                {p.topDrinks.length ? p.topDrinks.map((d) => (
+                  <span key={d.label} className="people-drink mono">{d.count}x {d.label}</span>
+                )) : (
+                  <span className="mono dim">no orders yet</span>
+                )}
+              </div>
+
+              <div className="people-actions">
+                <button className="btn-mini" onClick={() => patchPerson(p.id, { hiddenFromGift: !p.hiddenFromGift })}>
+                  {p.hiddenFromGift ? 'show in gift' : 'hide from gift'}
+                </button>
+                <button className="btn-mini danger" disabled={p.isCurrent} title={p.isCurrent ? 'hide your profile instead' : 'delete profile'} onClick={() => deletePerson(p)}>delete profile</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// === Queue (confirmed orders only) ===
+function QueueTab({ state, setState }) {
+  const [filter, setFilter] = _usB(CTRLS.isoToday());
+
+  const allDates = _umB(() => {
+    const today = CTRLS.isoToday();
+    // Only today and future — past dates are hard to scroll past and rarely needed.
+    const fromOrders = state.orders
+      .filter((o) => CTRLS.isConfirmedOrder(o) && o.date >= today)
+      .map((o) => o.date);
+    return [...new Set([today, ...fromOrders])].sort();
+  }, [state.orders]);
+
+  const orders = state.orders.filter((o) => CTRLS.isConfirmedOrder(o) && o.date === filter).sort((a, b) => a.ts - b.ts);
+  const totalCups = orders.reduce((s, o) => s + o.items.length, 0);
+  const totalBaht = orders.reduce((s, o) => s + CTRLS.orderTotal(state, o), 0);
+
+  // Aggregate drinks for prep list
+  const prepList = _umB(() => {
+    const map = {};
+    orders.forEach((o) => o.items.forEach((it) => {
+      const label = CTRLS.itemLabel(state, it);
+      const color = CTRLS.itemColor(state, it);
+      if (!map[label]) map[label] = { label, color, count: 0 };
+      map[label].count++;
+    }));
+    return Object.values(map).sort((a, b) => b.count - a.count);
+  }, [orders, state]);
+
+  const sd = filter ? shortDate(filter) : null;
+
+  return (
+    <div>
+      {/* Date selector */}
+      <div className="date-row no-scrollbar">
+        {allDates.map((d) => {
+          const s = shortDate(d);
+          const n = state.orders.filter((o) => o.date === d && CTRLS.isConfirmedOrder(o)).length;
+          const isToday = d === CTRLS.isoToday();
+          return (
+            <button key={d} className={`date-chip ${filter === d ? 'active' : ''}`} onClick={() => setFilter(d)}>
+              <span className="mono">{isToday ? 'today' : s.dow}</span> {s.day}
+              {n > 0 && <span className="chip-badge">{n}</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      {orders.length === 0 ? (
+        <div className="empty-state">
+          <CatSleepy size={80} />
+          <div className="h-hand" style={{ fontSize: 18 }}>quiet day 🌿</div>
+          <div className="mono dim">no confirmed orders for this day</div>
+        </div>
+      ) : (
+        <>
+          {/* Header */}
+          <div className="brew-header">
+            <span className="h-doodle" style={{ fontSize: 36, color: 'var(--mustard)' }}>{totalCups}</span>
+            <div>
+              <div className="h-hand" style={{ fontSize: 18 }}>cup{totalCups !== 1 ? 's' : ''} to brew</div>
+              <div className="mono dim">{sd?.dow} {sd?.day} {sd?.monLong} · ฿{formatBaht(totalBaht)} · {orders.length} order{orders.length !== 1 ? 's' : ''}</div>
+            </div>
+          </div>
+
+          {/* Prep list */}
+          <div className="brew-section-label mono">what to brew</div>
+          <div className="brew-prep-list">
+            {prepList.map(({ label, color, count }) => (
+              <div key={label} className="brew-prep-row">
+                <div className="brew-prep-count h-doodle">{count}×</div>
+                <Mug size={18} color="var(--charcoal)" fill={COLOR_TO_SOFT[color] || 'var(--terracotta-soft)'} />
+                <div className="h-hand brew-prep-name">{label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* By person */}
+          <div className="brew-section-label mono" style={{ marginTop: 16 }}>for</div>
+          <div className="brew-person-list">
+            {orders.map((o) => (
+              <div key={o.id} className="brew-person-row">
+                <CatAvatar avatar={o.avatar || { body: 'beige', expression: 'happy' }} size={32} />
+                <div className="brew-person-mid">
+                  <div className="h-hand" style={{ fontSize: 15, lineHeight: 1.1 }}>
+                    {o.source === 'gift' && <span style={{ marginRight: 4 }}>🎁</span>}
+                    {o.name}
+                    {o.source === 'subscription' && <span className="mono dim" style={{ fontSize: 9, marginLeft: 5 }}>📌</span>}
+                  </div>
+                  <div className="mono dim" style={{ fontSize: 11 }}>
+                    {o.items.map((it) => CTRLS.itemLabel(state, it)).join(' · ')}
+                    {o.source === 'gift' && <span style={{ color: 'var(--sage)' }}> · gift{o.gifterName ? ` from ${o.gifterName}` : ''}</span>}
+                    {o.note ? <span style={{ color: 'var(--terracotta)' }}> · {o.note}</span> : null}
+                  </div>
+                  {o.outOfTeam && (
+                    <div className="mono lineid-badge">
+                      นอกทีม +฿{CTRLS.outOfTeamSurcharge(state) * CTRLS.cupQty(o)}{o.lineId ? ` · LINE: ${o.lineId}` : ' · ไม่มี LINE ID'}
+                    </div>
+                  )}
+                </div>
+                <div className="mono dim" style={{ fontSize: 12 }}>฿{CTRLS.orderTotal(state, o)}</div>
+                <button
+                  className="x"
+                  style={{ color: 'var(--terracotta)', marginLeft: 6, flexShrink: 0 }}
+                  title="remove order"
+                  onClick={() => setState({ ...state, orders: state.orders.filter((x) => x.id !== o.id) })}
+                >×</button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// === Billing tab — weekly totals per person ===
+function BillingTab({ state }) {
+  const [weekStart, setWeekStart] = _usB(() => {
+    const today = new Date();
+    const dow = today.getDay();
+    const diff = dow === 0 ? -6 : 1 - dow;
+    const mon = new Date(today);
+    mon.setDate(today.getDate() + diff);
+    return isoFromDate(mon);
+  });
+  const [copied, setCopied] = _usB(false);
+
+  const weekDates = _umB(() => {
+    const dates = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(weekStart + 'T00:00:00');
+      d.setDate(d.getDate() + i);
+      dates.push(isoFromDate(d));
+    }
+    return dates;
+  }, [weekStart]);
+
+  function bumpWeek(delta) {
+    const d = new Date(weekStart + 'T00:00:00');
+    d.setDate(d.getDate() + 7 * delta);
+    setWeekStart(isoFromDate(d));
+  }
+
+  const billing = _umB(() => {
+    const map = {};
+    state.orders
+      .filter((o) => CTRLS.isConfirmedOrder(o) && weekDates.includes(o.date))
+      .forEach((o) => {
+        if (!map[o.name]) {
+          map[o.name] = { name: o.name, avatar: o.avatar, total: 0, cups: 0, orderCount: 0 };
+        }
+        map[o.name].total += CTRLS.orderTotal(state, o);
+        map[o.name].cups += o.items.length;
+        map[o.name].orderCount++;
+      });
+    return Object.values(map).sort((a, b) => b.total - a.total);
+  }, [state.orders, weekDates]);
+
+  const grandTotal = billing.reduce((s, p) => s + p.total, 0);
+  const grandCups = billing.reduce((s, p) => s + p.cups, 0);
+
+  const weekLabel = (() => {
+    const sd = shortDate(weekDates[0]);
+    const ed = shortDate(weekDates[6]);
+    return `${sd.mon} ${sd.day} – ${ed.mon} ${ed.day}`;
+  })();
+
+  async function copyBilling() {
+    const lines = [`💰 CTRL+S COFFEE — WEEKLY BILLING`];
+    lines.push(weekLabel);
+    lines.push(`────────────────────`);
+    lines.push(`${grandCups} cups · ฿${formatBaht(grandTotal)} total`);
+    lines.push('');
+    billing.forEach((p) => lines.push(`${p.name}: ฿${formatBaht(p.total)} (${p.cups} cup${p.cups !== 1 ? 's' : ''})`));
+    if (await copyText(lines.join('\n'))) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    }
+  }
+
+  return (
+    <div>
+      <div className="billing-nav">
+        <button className="nav-btn" onClick={() => bumpWeek(-1)}>‹</button>
+        <span className="h-hand" style={{ flex: 1, textAlign: 'center', fontSize: 14 }}>{weekLabel}</span>
+        <button className="nav-btn" onClick={() => bumpWeek(1)}>›</button>
+      </div>
+
+      {billing.length === 0 ? (
+        <div className="empty-state">
+          <CatSleepy size={80} />
+          <div className="h-hand" style={{ fontSize: 18 }}>nothing to collect</div>
+          <div className="mono dim">no confirmed orders this week</div>
+        </div>
+      ) : (
+        <>
+          <div className="billing-summary">
+            <div className="mono dim" style={{ fontSize: 11, marginBottom: 4 }}>to collect this week</div>
+            <div className="h-doodle" style={{ fontSize: 44, color: 'var(--terracotta)', lineHeight: 1 }}>฿{formatBaht(grandTotal)}</div>
+            <div className="mono dim" style={{ marginTop: 4 }}>{grandCups} cups · {billing.length} person{billing.length !== 1 ? 's' : ''}</div>
+          </div>
+
+          <div className="billing-list">
+            {billing.map((p) => (
+              <div key={p.name} className="billing-row">
+                <CatAvatar avatar={p.avatar || { body: 'beige', expression: 'happy' }} size={36} />
+                <div className="billing-mid">
+                  <div className="h-hand" style={{ fontSize: 15, lineHeight: 1.1 }}>{p.name}</div>
+                  <div className="mono dim" style={{ fontSize: 11 }}>{p.cups} cup{p.cups !== 1 ? 's' : ''} · {p.orderCount} order{p.orderCount !== 1 ? 's' : ''}</div>
+                </div>
+                <div className="h-doodle" style={{ fontSize: 26, color: 'var(--terracotta)' }}>฿{formatBaht(p.total)}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 16px 0' }}>
+            <button className={`copy-btn ${copied ? 'copied' : ''}`} onClick={copyBilling}>{copied ? '✓ copied' : '📋 copy list'}</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// === Summary tab — text confirm for tomorrow ===
+function SummaryTab({ state }) {
+  // Default to tomorrow
+  const [target, setTarget] = _usB(() => {
+    const d = new Date(); d.setDate(d.getDate() + 1);
+    return isoFromDate(d);
+  });
+  const [copied, setCopied] = _usB(false);
+
+  const orders = state.orders.filter((o) => o.date === target && CTRLS.isConfirmedOrder(o)).sort((a, b) => a.ts - b.ts);
+  const totalCups = orders.reduce((s, o) => s + o.items.length, 0);
+  const totalBaht = orders.reduce((s, o) => s + CTRLS.orderTotal(state, o), 0);
+
+  // Aggregate by drink name for prep count
+  const drinkCount = {};
+  orders.forEach((o) => o.items.forEach((it) => {
+    const label = CTRLS.itemLabel(state, it);
+    drinkCount[label] = (drinkCount[label] || 0) + 1;
+  }));
+
+  const sd = shortDate(target);
+  const lines = [];
+  lines.push(`☕ CTRL+S COFFEE — ${sd.dow} ${sd.day} ${sd.monLong}`);
+  lines.push(`────────────────────`);
+  lines.push(`${totalCups} cup${totalCups !== 1 ? 's' : ''} · ฿${formatBaht(totalBaht)} · ${orders.length} order${orders.length !== 1 ? 's' : ''}`);
+  lines.push('');
+  if (Object.keys(drinkCount).length) {
+    lines.push(`📋 by drink:`);
+    Object.entries(drinkCount).sort((a,b) => b[1]-a[1]).forEach(([k, v]) => lines.push(`  • ${v}× ${k}`));
+    lines.push('');
+  }
+  lines.push(`👥 by person:`);
+  if (orders.length === 0) lines.push(`  (none yet)`);
+  orders.forEach((o) => {
+    const items = o.items.map((it) => CTRLS.itemLabel(state, it)).join(', ');
+    const teamTag = o.outOfTeam ? ` · นอกทีม +฿${CTRLS.outOfTeamSurcharge(state) * CTRLS.cupQty(o)}${o.lineId ? ` (LINE: ${o.lineId})` : ''}` : '';
+    const tag = (o.source === 'gift' ? ` 🎁${o.gifterName ? ' from ' + o.gifterName : ''}` : o.source === 'subscription' ? ' 📌' : '') + teamTag;
+    lines.push(`  • ${o.name}: ${items}${tag}`);
+  });
+  const summaryText = lines.join('\n');
+  async function copy() {
+    if (await copyText(summaryText)) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    }
+  }
+  // Generate next 7 day chips
+  const dateChips = _umB(() => nextNDays(7, CTRLS.isoToday()), []);
+
+  return (
+    <div>
+      <div className="date-row no-scrollbar">
+        {dateChips.map((d) => {
+          const csd = shortDate(d);
+          const count = state.orders.filter((o) => o.date === d && CTRLS.isConfirmedOrder(o)).length;
+          return (
+            <button key={d} className={`date-chip ${target === d ? 'active' : ''}`} onClick={() => setTarget(d)}>
+              <span className="mono">{csd.dow}</span> {csd.day}
+              {count > 0 && <span className="chip-badge">{count}</span>}
+            </button>
+          );
+        })}
+      </div>
+      <div className="summary-card">
+        <div className="asap-head">
+          <span className="mono dim">copy & paste for nightly check</span>
+          <button className={`copy-btn ${copied ? 'copied' : ''}`} onClick={copy}>{copied ? '✓ copied' : '📋 copy'}</button>
+        </div>
+        <pre className="summary-pre">{summaryText}</pre>
+      </div>
+      <div className="footnote mono" style={{ padding: '4px 0' }}>tip · paste into your group chat in the evening to double-check before brewing</div>
+    </div>
+  );
+}
+
+// === Menu tab — manage signature menu (add/edit/delete + cat color) ===
+function MenuTab({ state, setState }) {
+  const [editing, setEditing] = _usB(null);
+  const menu = state.signatureMenu || CTRLS.DEFAULT_SIGNATURE_MENU;
+  function update(id, patch) {
+    setState({ ...state, signatureMenu: menu.map((m) => m.id === id ? { ...m, ...patch } : m) });
+  }
+  function remove(id) {
+    if (!confirm('Remove this signature menu item? Existing orders keep the name.')) return;
+    setState({ ...state, signatureMenu: menu.filter((m) => m.id !== id) });
+  }
+  function add() {
+    const id = 'm' + Date.now().toString(36);
+    setState({
+      ...state,
+      signatureMenu: [...menu, {
+        id, name: 'New Drink', mood: '✨', roast: 'medium', price: 40, color: 'sage', catStyle: 'happy',
+        tag: 'tasting notes / tag',
+        tagline: 'short story of this cup.',
+      }],
+    });
+    setEditing(id);
+  }
+  return (
+    <div>
+      <div className="asap-head">
+        <span className="mono dim">signature menu · the regulars</span>
+        <button className="btn-mini" onClick={add}>+ add</button>
+      </div>
+      {menu.map((m) => (
+        <div key={m.id}>
+          {editing === m.id ? (
+            <div className="menu-edit-form">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <CatBase size={48}
+                  fill={m.color === 'pink' ? '#EADFCB' : m.color === 'mustard' ? '#F6F1E8' : m.color === 'terracotta' ? '#F6F1E8' : m.color === 'sage' ? '#EADFCB' : '#F6F1E8'}
+                  stroke="#2B2B2B"
+                  expression={m.catStyle || 'happy'}
+                  accent={({ mustard:'#D5A23B', pink:'#E7A2AC', terracotta:'#C97B5F', sage:'#8FA287', charcoal:'#D5A23B' })[m.color] || '#D5A23B'}
+                />
+                <input style={{ flex: 1, fontSize: 18 }} value={m.name} onChange={(e) => update(m.id, { name: e.target.value })} placeholder="name" />
+                <input style={{ width: 50 }} value={m.mood || ''} onChange={(e) => update(m.id, { mood: e.target.value })} placeholder="🌟" />
+              </div>
+              <input value={m.tag} onChange={(e) => update(m.id, { tag: e.target.value })} placeholder="tasting tag (small caps line)" />
+              <textarea rows="2" value={m.tagline} onChange={(e) => update(m.id, { tagline: e.target.value })} placeholder="tagline (the story)" />
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span className="mono dim" style={{ fontSize: 10, flex: '0 0 60px' }}>roast</span>
+                <select value={CTRLS.itemRoast(m)} onChange={(e) => update(m.id, { roast: e.target.value })}>
+                  {CTRLS.ROAST_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+                <span className={`roast-pill ${CTRLS.itemRoast(m)}`}>{CTRLS.itemRoast(m)}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span className="mono dim" style={{ fontSize: 10, flex: '0 0 60px' }}>cat color</span>
+                <div className="color-picker">
+                  {CTRLS.COLOR_OPTIONS.map((c) => (
+                    <button
+                      key={c}
+                      className={`color-swatch ${m.color === c ? 'selected' : ''}`}
+                      style={{ background: COLOR_TO_VAR[c] }}
+                      onClick={() => update(m.id, { color: c })}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div>
+                <span className="mono dim" style={{ fontSize: 10 }}>expression</span>
+                <div className="avatar-grid" style={{ gridTemplateColumns: 'repeat(6, 1fr)', gap: 6, marginTop: 6 }}>
+                  {EXPRESSIONS.map((exp) => (
+                    <button
+                      key={exp}
+                      className={`avatar-cell ${(m.catStyle || 'happy') === exp ? 'selected' : ''}`}
+                      onClick={() => update(m.id, { catStyle: exp })}
+                      title={exp}
+                    >
+                      <CatBase size={32} fill="#EADFCB" stroke="#2B2B2B" expression={exp} accent="#D5A23B" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span className="mono dim" style={{ fontSize: 10, flex: '0 0 60px' }}>price</span>
+                <span className="mono dim" style={{ fontSize: 10 }}>฿</span>
+                <input type="number" style={{ width: 70 }} value={m.price} onChange={(e) => update(m.id, { price: +e.target.value })} />
+              </div>
+              <div className="ed-row">
+                <button className="btn-mini" onClick={() => update(m.id, { available: !CTRLS.isAvailable(m) })}>
+                  {CTRLS.isAvailable(m) ? 'mark sold out' : 'make available'}
+                </button>
+                <button className="btn-mini danger" onClick={() => { remove(m.id); setEditing(null); }}>delete</button>
+                <button className="btn-mini" onClick={() => setEditing(null)} style={{ marginLeft: 'auto' }}>done</button>
+              </div>
+            </div>
+          ) : (
+            <button className={`menu-row ${!CTRLS.isAvailable(m) ? 'unavailable' : ''}`} style={{ width: '100%', textAlign: 'left' }} onClick={() => setEditing(m.id)}>
+              <div className="color-dot" style={{ background: COLOR_TO_VAR[m.color] }} />
+              <div className="menu-mid">
+                <div className="menu-name">{m.name} {m.mood}</div>
+                <div className="menu-tag">
+                  <span className={`roast-pill ${CTRLS.itemRoast(m)}`}>{CTRLS.itemRoast(m)}</span>
+                  {!CTRLS.isAvailable(m) && <span className="soldout-pill">sold out</span>}
+                  {m.tag}
+                </div>
+              </div>
+              <div className="h-doodle" style={{ fontSize: 20 }}>฿{m.price}</div>
+              <span className="mono dim" style={{ fontSize: 10, marginLeft: 6 }}>edit ✎</span>
+            </button>
+          )}
+        </div>
+      ))}
+      <div className="footnote mono" style={{ padding: '12px 0' }}>signature = everyday regulars · use sold out when something should disappear from ordering</div>
+    </div>
+  );
+}
+
+// === ASAP tab (existing, but sorted) ===
+function AsapTab({ state, setState }) {
+  const [editing, setEditing] = _usB(null);
+  const sorted = _umB(() => {
+    return [...state.asap].sort((a, b) => (CTRLS.ROAST_ORDER[CTRLS.itemRoast(a)] - CTRLS.ROAST_ORDER[CTRLS.itemRoast(b)]) || a.name.localeCompare(b.name));
+  }, [state.asap]);
+  function update(id, patch) {
+    setState({ ...state, asap: state.asap.map((a) => a.id === id ? { ...a, ...patch } : a) });
+  }
+  function remove(id) {
+    setState({ ...state, asap: state.asap.filter((a) => a.id !== id) });
+  }
+  function add() {
+    const id = 'a' + Date.now();
+    setState({ ...state, asap: [...state.asap, { id, name: 'New Bean', roast: 'medium', price: 60, notes: 'tasting notes here' }] });
+    setEditing(id);
+  }
+  return (
+    <div>
+      <div className="asap-head">
+        <span className="mono dim">today's lineup · sorted by roast</span>
+        <button className="btn-mini" onClick={add}>+ bean</button>
+      </div>
+      {state.barista?.featuredAsap && (() => {
+        const feat = state.asap.find((a) => a.id === state.barista.featuredAsap);
+        return feat ? (
+          <div className="edit-warn" style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>📌</span>
+            <span className="h-hand" style={{ flex: 1 }}>Today's Roast: <strong>{feat.name}</strong></span>
+            <button className="btn-mini" style={{ background: 'var(--terracotta)', color: 'var(--cream)' }}
+              onClick={() => setState({ ...state, barista: { ...state.barista, featuredAsap: null } })}>unpin</button>
+          </div>
+        ) : null;
+      })()}
+      {sorted.map((a) => (
+        <div key={a.id} className="asap-row">
+          {editing === a.id ? (
+            <div className="asap-edit">
+              <input className="ed-name" value={a.name} onChange={(e) => update(a.id, { name: e.target.value })} />
+              <textarea className="ed-notes" rows="2" value={a.notes} onChange={(e) => update(a.id, { notes: e.target.value })} />
+              <div className="ed-row">
+                <select value={CTRLS.itemRoast(a)} onChange={(e) => update(a.id, { roast: e.target.value })}>
+                  {CTRLS.ROAST_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+                <input type="number" value={a.price} onChange={(e) => update(a.id, { price: +e.target.value })} />
+                <button className="btn-mini" onClick={() => update(a.id, { available: !CTRLS.isAvailable(a) })}>
+                  {CTRLS.isAvailable(a) ? 'sold out' : 'available'}
+                </button>
+                <button className="btn-mini danger" onClick={() => { remove(a.id); setEditing(null); }}>delete</button>
+                <button className="btn-mini" onClick={() => setEditing(null)}>save</button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
+              <button className={`asap-row-btn ${!CTRLS.isAvailable(a) ? 'unavailable' : ''}`} style={{ flex: 1 }} onClick={() => setEditing(a.id)}>
+                <div className="asap-row-left">
+                  <span className={`roast-pill ${CTRLS.itemRoast(a)}`}>{CTRLS.itemRoast(a)}</span>
+                  {!CTRLS.isAvailable(a) && <span className="soldout-pill">sold out</span>}
+                  <div>
+                    <div className="h-hand">{a.name}</div>
+                    <div className="mono dim notes-clip">{a.notes}</div>
+                  </div>
+                </div>
+                <div className="asap-row-right">
+                  <span className="h-doodle">฿{a.price}</span>
+                  <span className="mono dim">edit ✎</span>
+                </div>
+              </button>
+              <button
+                title={state.barista?.featuredAsap === a.id ? 'unpin' : 'feature as today\'s roast'}
+                style={{
+                  padding: '0 12px',
+                  borderRadius: 14,
+                  border: '1px solid var(--line)',
+                  background: state.barista?.featuredAsap === a.id ? 'var(--terracotta)' : 'var(--paper)',
+                  fontSize: 16,
+                  flexShrink: 0,
+                  transition: 'background .15s',
+                }}
+                onClick={() => setState({
+                  ...state,
+                  barista: { ...state.barista, featuredAsap: state.barista?.featuredAsap === a.id ? null : a.id },
+                })}
+              >
+                📌
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// === Schedule tab — weekly toggles + monthly overrides ===
+function ScheduleTab({ state, setState }) {
+  const [monthCursor, setMonthCursor] = _usB(() => {
+    const d = new Date();
+    return { y: d.getFullYear(), m: d.getMonth() };
+  });
+  const dows = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  function toggleDow(d) {
+    const open = state.openDays.includes(d) ? state.openDays.filter((x) => x !== d) : [...state.openDays, d];
+    setState({ ...state, openDays: open });
+  }
+  function bumpMonth(delta) {
+    let { y, m } = monthCursor;
+    m += delta;
+    if (m < 0) { m = 11; y--; }
+    if (m > 11) { m = 0; y++; }
+    setMonthCursor({ y, m });
+  }
+  function toggleDateOverride(iso) {
+    const dow = new Date(iso + 'T00:00:00').getDay();
+    const baseOpen = state.openDays.includes(dow);
+    const isClosed = state.closedDates?.includes(iso);
+    const isOpen = state.openDates?.includes(iso);
+    // cycle: base → opposite of base → base
+    if (baseOpen) {
+      // open by default → toggle closed override
+      if (isClosed) setState({ ...state, closedDates: state.closedDates.filter((x) => x !== iso) });
+      else setState({ ...state, closedDates: [...(state.closedDates || []), iso], openDates: (state.openDates || []).filter((x) => x !== iso) });
+    } else {
+      // closed by default → toggle open override
+      if (isOpen) setState({ ...state, openDates: state.openDates.filter((x) => x !== iso) });
+      else setState({ ...state, openDates: [...(state.openDates || []), iso], closedDates: (state.closedDates || []).filter((x) => x !== iso) });
+    }
+  }
+  const matrix = monthMatrix(monthCursor.y, monthCursor.m);
+  const monthLabel = new Date(monthCursor.y, monthCursor.m, 1).toLocaleString('en', { month: 'long', year: 'numeric' });
+  const todayIso = CTRLS.isoToday();
+
+  return (
+    <div>
+      <div className="asap-head">
+        <span className="mono dim">recurring week · default open days</span>
+      </div>
+      <div className="dow-grid">
+        {dows.map((label, i) => (
+          <button key={i} className={`dow-card ${state.openDays.includes(i) ? 'open' : 'closed'}`} onClick={() => toggleDow(i)}>
+            <div className="mono dim">{label.toLowerCase().slice(0,3)}</div>
+            <div className="h-doodle" style={{ fontSize: 26 }}>{state.openDays.includes(i) ? '✓' : '·'}</div>
+            <div className="mono dim">{state.openDays.includes(i) ? 'open' : 'closed'}</div>
+          </button>
+        ))}
+      </div>
+
+      <div className="asap-head" style={{ marginTop: 20 }}>
+        <span className="mono dim">specific days · override anything</span>
+      </div>
+      <div className="sched-month">
+        <div className="sched-month-head">
+          <div className="daypicker-nav">
+            <button className="nav-btn" onClick={() => bumpMonth(-1)}>‹</button>
+            <button className="nav-btn" onClick={() => { const d = new Date(); setMonthCursor({ y: d.getFullYear(), m: d.getMonth() }); }} style={{ width: 'auto', padding: '0 8px', borderRadius: 999 }}>now</button>
+            <button className="nav-btn" onClick={() => bumpMonth(1)}>›</button>
+          </div>
+          <div className="h-doodle">{monthLabel}</div>
+        </div>
+        <div className="sched-grid">
+          {['S','M','T','W','T','F','S'].map((d, i) => <div key={'h'+i} className="month-dow">{d}</div>)}
+          {matrix.map((c, i) => {
+            if (c.otherMonth) return <div key={i} className="sched-cell blank" />;
+            const baseOpen = state.openDays.includes(new Date(c.iso + 'T00:00:00').getDay());
+            const overrideClosed = state.closedDates?.includes(c.iso);
+            const overrideOpen = state.openDates?.includes(c.iso);
+            const eff = CTRLS.isOpen(state, c.iso);
+            return (
+              <button
+                key={i}
+                className={`sched-cell ${eff ? 'open' : 'closed'} ${overrideClosed ? 'override-closed' : ''} ${overrideOpen ? 'override-open' : ''} ${c.iso === todayIso ? 'today' : ''}`}
+                onClick={() => toggleDateOverride(c.iso)}
+              >
+                {c.day}
+              </button>
+            );
+          })}
+        </div>
+        <div className="sched-legend">
+          <span className="lg"><span className="sw" style={{ background: 'var(--mustard-soft)', border: '1px solid var(--mustard)' }}></span> open</span>
+          <span className="lg"><span className="sw" style={{ background: 'var(--paper)', border: '1px solid var(--line)' }}></span> closed</span>
+          <span className="lg"><span className="sw" style={{ background: 'var(--paper)', boxShadow: 'inset 0 0 0 2px var(--sage)' }}></span> opened one-off</span>
+          <span className="lg"><span className="sw" style={{ background: 'var(--mustard-soft)', boxShadow: 'inset 0 0 0 2px var(--terracotta)' }}></span> closed one-off</span>
+        </div>
+      </div>
+
+      <div className="asap-head" style={{ marginTop: 20 }}>
+        <span className="mono dim">data</span>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+        <button className="btn-mini" style={{ flex: 1 }} onClick={() => {
+          if (!confirm('Clear all orders? Shop settings & profiles stay.')) return;
+          setState({ ...state, orders: [] });
+        }}>🗑 clear all orders</button>
+        <button className="btn-mini danger" style={{ flex: 1 }} onClick={() => {
+          if (!confirm('Factory reset? This wipes EVERYTHING on this device.')) return;
+          CTRLS.reset(); location.reload();
+        }}>⚠ factory reset</button>
+      </div>
+
+      <div className="asap-head">
+        <span className="mono dim">payment & settings</span>
+      </div>
+      <div className="today-note-editor">
+        <div className="settings-row">
+          <label className="mono dim">today's note</label>
+          <button
+            className={`btn-mini ${state.barista?.todayNote?.enabled ? '' : 'ghost'}`}
+            onClick={() => setState({
+              ...state,
+              barista: {
+                ...state.barista,
+                todayNote: { ...(state.barista?.todayNote || {}), enabled: !state.barista?.todayNote?.enabled },
+              },
+            })}
+          >
+            {state.barista?.todayNote?.enabled ? 'showing' : 'hidden'}
+          </button>
+        </div>
+        <div className="settings-row">
+          <label className="mono dim">title</label>
+          <input
+            className="setting-input"
+            value={state.barista?.todayNote?.title || "today's note"}
+            onChange={(e) => setState({
+              ...state,
+              barista: {
+                ...state.barista,
+                todayNote: { ...(state.barista?.todayNote || {}), title: e.target.value },
+              },
+            })}
+          />
+        </div>
+        <div className="settings-row note-row">
+          <label className="mono dim">message</label>
+          <textarea
+            className="setting-input"
+            rows="3"
+            placeholder="new beans today, holiday note, quick hello..."
+            value={state.barista?.todayNote?.body || ''}
+            onChange={(e) => setState({
+              ...state,
+              barista: {
+                ...state.barista,
+                todayNote: { ...(state.barista?.todayNote || {}), body: e.target.value },
+              },
+            })}
+          />
+        </div>
+      </div>
+      <div className="settings-row">
+        <label className="mono dim">PromptPay</label>
+        <input className="setting-input" value={state.barista.promptPay} onChange={(e) => setState({ ...state, barista: { ...state.barista, promptPay: e.target.value } })} />
+      </div>
+      <div className="settings-row">
+        <label className="mono dim">shop name</label>
+        <input className="setting-input" value={state.barista.shopName} onChange={(e) => setState({ ...state, barista: { ...state.barista, shopName: e.target.value } })} />
+      </div>
+      <div className="settings-row">
+        <label className="mono dim">your name</label>
+        <input className="setting-input" value={state.barista.name} onChange={(e) => setState({ ...state, barista: { ...state.barista, name: e.target.value } })} />
+      </div>
+      <div className="settings-row">
+        <label className="mono dim">barista PIN</label>
+        <input className="setting-input" value={state.barista.baristaPin} onChange={(e) => setState({ ...state, barista: { ...state.barista, baristaPin: e.target.value.replace(/\D/g, '') } })} />
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, {
+  BaristaPinGate, BaristaPocket,
+});

@@ -78,7 +78,8 @@
     gifts: [],
     profiles: {}, // fake shared store · code → profile
     peopleMeta: {}, // profileId -> { hiddenFromGift, deleted }
-    barista: { name: 'Boss', shopName: 'CTRL+S Coffee', promptPay: '081-234-5678', baristaPin: '1337', featuredAsap: null, todayNote: { enabled: false, title: "today's note", body: '' } },
+    beanLove: {}, // asapId -> [profileId] · votes to bring back sold-out beans
+    barista: { name: 'Boss', shopName: 'CTRL+S Coffee', promptPay: '081-234-5678', baristaPin: '1337', featuredAsap: null, outOfTeamSurcharge: 20, todayNote: { enabled: false, title: "today's note", body: '' } },
   };
 
   function load() { return JSON.parse(JSON.stringify(DEFAULT_STATE)); }
@@ -125,6 +126,7 @@
       gifts: Array.isArray(state?.gifts) ? state.gifts : [],
       profiles: state?.profiles || {},
       peopleMeta: state?.peopleMeta || {},
+      beanLove: state?.beanLove || {},
       barista: { ...DEFAULT_STATE.barista, ...(state?.barista || {}) },
     };
   }
@@ -266,7 +268,13 @@
     const ref = item.type === 'menu' ? menuById(state, item.refId) : asapById(state, item.refId);
     return (ref ? ref.price : 0) * (item.qty || 1);
   }
-  function orderTotal(state, order) { return order.items.reduce((s, it) => s + priceForItem(state, it), 0); }
+  function outOfTeamSurcharge(state) { return state.barista?.outOfTeamSurcharge ?? 20; }
+  function orderTotal(state, order) {
+    const base = order.items.reduce((s, it) => s + priceForItem(state, it), 0);
+    // Out-of-team orderers pay a per-cup surcharge (snapshotted on the order).
+    const extra = order.outOfTeam ? outOfTeamSurcharge(state) * cupQty(order) : 0;
+    return base + extra;
+  }
   function itemRoast(itemOrDrink) { return itemOrDrink?.roast || 'medium'; }
   function isAvailable(itemOrDrink) { return itemOrDrink?.available !== false; }
   function subscriptionCandidatesForTemplate(state, item) {
@@ -327,7 +335,28 @@
     return 'CAT-' + out;
   }
 
-  const DEFAULT_AVATAR = { body: 'beige', accent: 'mustard', eyeColor: 'black', expression: 'happy', prop: 'none' };
+  const DEFAULT_AVATAR = { body: 'beige', pattern: 'solid', accent: 'mustard', eyeColor: 'black', expression: 'happy', hat: 'none', face: 'none', neck: 'none', hand: 'none', aura: 'none' };
+
+  // Which slot each accessory belongs to (for migrating legacy single-prop avatars).
+  const PROP_SLOT = {
+    headband: 'hat', beret: 'hat', beanie: 'hat', cap: 'hat', flower: 'hat', bucket: 'hat',
+    headphones: 'hat', tophat: 'hat', layers: 'hat', crown: 'hat', 'party-hat': 'hat', halo: 'hat', wizard: 'hat',
+    glasses: 'face', sunglasses: 'face', monocle: 'face', eyepatch: 'face',
+    bow: 'neck', collar: 'neck', scarf: 'neck', bowtie: 'neck', necktie: 'neck', bandana: 'neck',
+    coffee: 'hand', pencil: 'hand', boba: 'hand', balloon: 'hand', eyedropper: 'hand', fish: 'hand',
+    cursor: 'aura', pentool: 'aura', 'sparkle-aura': 'aura', rainbow: 'aura', 'cmd-key': 'aura',
+  };
+
+  // Migrate an avatar to the slot-based shape (moves legacy `prop` into its slot).
+  function normalizeAvatar(av) {
+    const a = { ...DEFAULT_AVATAR, ...(av || {}) };
+    if (av && av.prop && av.prop !== 'none') {
+      const slot = PROP_SLOT[av.prop];
+      if (slot && (!a[slot] || a[slot] === 'none')) a[slot] = av.prop;
+    }
+    delete a.prop;
+    return a;
+  }
 
   function newProfile(name, existingCodes = []) {
     let code; do { code = genCode(); } while (existingCodes.includes(code));
@@ -340,6 +369,8 @@
       orderIds: [],
       avatar: { ...DEFAULT_AVATAR },
       stats: { firstOrderDate: null },
+      outOfTeam: false,
+      lineId: '',
     };
   }
 
@@ -403,53 +434,82 @@
   ];
 
   // Avatar items unlocked per rank (cumulative — each tier adds to all previous)
+  // Avatar items unlocked per rank (cumulative — each tier adds to all previous).
+  // Only items that actually render in cat-svgs.jsx are listed.
   const RANK_UNLOCKS = {
     newfile: {
-      body:       ['cream', 'beige', 'sand', 'calico'],
-      accent:     ['mustard', 'pink', 'lemon'],
+      body:       ['cream', 'beige', 'sand'],
+      pattern:    ['solid', 'tabby'],
+      accent:     ['mustard', 'pink'],
       eyeColor:   ['black', 'brown'],
-      expression: ['happy', 'closed', 'sleepy', 'curious'],
-      prop:       ['none', 'bow', 'collar', 'name-tag', 'star-clip', 'bandana', 'tiny-spoon', 'sticky-note', 'leaf', 'heart-pin'],
+      expression: ['happy', 'closed', 'sleepy'],
+      hat:        ['none', 'headband'],
+      face:       ['none', 'glasses'],
+      neck:       ['none', 'bow', 'collar'],
+      hand:       ['none', 'coffee'],
+      aura:       ['none'],
     },
     copy: {
-      body:       ['caramel', 'rosy', 'mocha'],
-      accent:     ['terracotta', 'coral'],
-      eyeColor:   ['blue', 'rose'],
-      expression: ['wink', 'sparkle', 'shy', 'blep'],
-      prop:       ['beanie', 'beret', 'pencil', 'coffee', 'cursor', 'keyboard', 'tote-bag', 'washi-tape'],
+      body:       ['caramel', 'rosy'],
+      pattern:    ['gray-tabby'],
+      accent:     ['terracotta'],
+      eyeColor:   ['blue'],
+      expression: ['wink', 'sparkle', 'shy'],
+      hat:        ['beret', 'beanie', 'cap'],
+      face:       ['sunglasses'],
+      neck:       ['scarf', 'bowtie'],
+      hand:       ['pencil', 'boba'],
+      aura:       [],
     },
     paste: {
-      body:       ['mint', 'sky', 'lavender'],
-      accent:     ['sage', 'teal'],
-      eyeColor:   ['green', 'amber', 'teal'],
-      expression: ['heart', 'lol', 'grumpy', 'happy-tears'],
-      prop:       ['glasses', 'headband', 'flower', 'cap', 'eyedropper', 'layers', 'clipboard', 'plant', 'mug-stack'],
+      body:       ['mint', 'sky'],
+      pattern:    ['calico', 'tortie'],
+      accent:     ['sage'],
+      eyeColor:   ['green', 'amber'],
+      expression: ['heart', 'lol', 'smug'],
+      hat:        ['flower', 'bucket'],
+      face:       ['monocle'],
+      neck:       ['necktie', 'bandana'],
+      hand:       ['balloon', 'eyedropper'],
+      aura:       ['cursor'],
     },
     undo: {
       body:       [],
+      pattern:    ['cow', 'tuxedo'],
       accent:     ['plum'],
       eyeColor:   ['violet'],
-      expression: ['star', 'smug', 'focus'],
-      prop:       ['sunglasses', 'scarf', 'headphones', 'crown', 'party-hat', 'pentool', 'lightning', 'moon', 'magic-wand'],
+      expression: ['star', 'grumpy'],
+      hat:        ['headphones', 'tophat', 'layers'],
+      face:       ['eyepatch'],
+      neck:       [],
+      hand:       ['fish'],
+      aura:       ['pentool'],
     },
     save: {
       body:       ['charcoal'],
+      pattern:    ['siamese'],
       accent:     ['navy'],
       eyeColor:   [],
-      expression: ['shocked', 'star-pulse', 'heart-float', 'neon-blink'],
-      prop:       ['halo', 'sparkle-aura', 'rainbow', 'cmd-key', 'orbit-stars', 'steam-aura', 'bounce-badge', 'comet-tail'],
+      expression: ['shocked', 'star-pulse', 'heart-float'],
+      hat:        ['crown', 'party-hat', 'halo', 'wizard'],
+      face:       [],
+      neck:       [],
+      hand:       [],
+      aura:       ['sparkle-aura', 'rainbow', 'cmd-key'],
     },
   };
 
   const RANK_ORDER = ['newfile', 'copy', 'paste', 'undo', 'save'];
+  const UNLOCK_CATEGORIES = ['body', 'pattern', 'accent', 'eyeColor', 'expression', 'hat', 'face', 'neck', 'hand', 'aura'];
 
   function unlocksFor(cupCount) {
     const rank = rankFor(cupCount);
     const idx = RANK_ORDER.indexOf(rank.key);
-    const out = { body: [], accent: [], eyeColor: [], expression: [], prop: [] };
+    const out = {};
+    for (const k of UNLOCK_CATEGORIES) out[k] = [];
     for (let i = 0; i <= idx; i++) {
       const tier = RANK_UNLOCKS[RANK_ORDER[i]];
-      for (const k of Object.keys(out)) out[k] = [...out[k], ...(tier[k] || [])];
+      for (const k of UNLOCK_CATEGORIES) out[k] = [...out[k], ...(tier[k] || [])];
     }
     return out;
   }
@@ -514,12 +574,12 @@
   window.CTRLS = {
     STORAGE_KEY, ACTIVE_CODE_KEY,
     DEFAULT_SIGNATURE_MENU, DEFAULT_ASAP, DEFAULT_OPEN_DAYS,
-    DEFAULT_AVATAR,
-    COLOR_OPTIONS, ROAST_ORDER, ROAST_OPTIONS, RANKS, RANK_UNLOCKS, RANK_ORDER, unlocksFor,
+    DEFAULT_AVATAR, normalizeAvatar, PROP_SLOT,
+    COLOR_OPTIONS, ROAST_ORDER, ROAST_OPTIONS, RANKS, RANK_UNLOCKS, RANK_ORDER, UNLOCK_CATEGORIES, unlocksFor,
     DOW_TH, DOW_EN, DOW_EN_SHORT,
     load, save, isoToday, isoDate, isOpen, orderCutoffForDate, canOrderDate, addMonths, daysBetween,
     remoteConfig, remoteEnabled, pullRemoteState, pushRemoteState, confirmOrders, subscribeRemoteState, adoptRemoteState,
-    menuById, asapById, priceForItem, orderTotal, itemRoast, isAvailable, subscriptionCandidatesForTemplate, subscriptionTemplateAvailable, isConfirmedOrder, orderBelongsToProfile, cupQty, cupCountForProfile, itemLabel, itemColor,
+    menuById, asapById, priceForItem, orderTotal, outOfTeamSurcharge, itemRoast, isAvailable, subscriptionCandidatesForTemplate, subscriptionTemplateAvailable, isConfirmedOrder, orderBelongsToProfile, cupQty, cupCountForProfile, itemLabel, itemColor,
     activeCode, setActiveCode, genCode, newProfile,
     getActiveProfile, upsertProfile, profileByCode,
     rankFor, nextRank,

@@ -159,10 +159,11 @@ function PocketApp() {
       return CTRLS.upsertProfile(s, updatedProfile);
     });
   }
-  function claimNewProfile(name, avatar) {
+  function claimNewProfile(name, avatar, meta) {
     const existingCodes = Object.keys(state.profiles || {});
     const p = CTRLS.newProfile(name, existingCodes);
     if (avatar) p.avatar = avatar;
+    if (meta) { p.outOfTeam = !!meta.outOfTeam; p.lineId = meta.lineId || ''; }
     setState((s) => CTRLS.upsertProfile(s, p));
     CTRLS.setActiveCode(p.code);
     setTick((t) => t + 1);

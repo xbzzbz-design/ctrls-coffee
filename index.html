@@ -2923,6 +2923,130 @@ input, textarea, select { font: inherit; color: inherit; }
   text-align: center;
 }
 
+/* === "Miss a bean?" — vote to bring back sold-out roasts === */
+.missed-section {
+  margin-top: 4px;
+  opacity: 0.78;
+  filter: grayscale(0.5);
+}
+.missed-bean {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.missed-bean:last-child { border-bottom: none; }
+.missed-bar {
+  height: 5px;
+  background: var(--line);
+  border-radius: 999px;
+  margin: 5px 0 3px;
+  overflow: hidden;
+}
+.missed-fill {
+  height: 100%;
+  background: var(--terracotta);
+  border-radius: 999px;
+  transition: width 0.3s;
+}
+.missed-name { color: var(--brown-light); }
+.missed-tag {
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--line);
+  color: var(--brown);
+  vertical-align: middle;
+  margin-left: 4px;
+}
+
+/* === Out-of-team signup toggle === */
+.outteam-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1.5px dashed var(--line);
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: var(--brown);
+}
+.outteam-toggle.on {
+  border-style: solid;
+  border-color: var(--terracotta);
+  background: var(--terracotta-soft);
+}
+.outteam-check { font-size: 16px; flex-shrink: 0; }
+.outteam-box { margin-top: 8px; }
+
+/* === Out-of-team LINE ID badge (barista back-office) === */
+.lineid-badge {
+  display: inline-block;
+  margin-top: 3px;
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--terracotta-soft);
+  color: var(--terracotta);
+  font-weight: 600;
+}
+
+/* === Café lounge — patrons with an order today, sitting together === */
+.cafe-section { position: relative; }
+.cafe-floor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 10px;
+  padding: 14px 8px 18px;
+  background: linear-gradient(180deg, var(--beige-soft, #F3EADA) 0%, var(--cream, #F6F1E8) 100%);
+  border-radius: 16px 16px 0 0;
+  justify-content: center;
+}
+.cafe-seat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 64px;
+  animation: cafe-pop 0.4s cubic-bezier(0.34,1.56,0.64,1) both;
+}
+@keyframes cafe-pop {
+  from { transform: translateY(8px) scale(0.8); opacity: 0; }
+  to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+.cafe-name {
+  font-size: 10px;
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 2px;
+  color: var(--brown);
+  font-weight: 600;
+}
+.cafe-seat.me .cafe-name {
+  background: var(--mustard);
+  color: var(--cream);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.cafe-cups { font-size: 9px; margin-top: 1px; letter-spacing: -2px; }
+.cafe-counter {
+  height: 12px;
+  background: repeating-linear-gradient(90deg, #C9A877 0 14px, #BE9B69 14px 28px);
+  border-radius: 0 0 6px 6px;
+  box-shadow: inset 0 2px 3px rgba(0,0,0,0.12);
+}
+.cafe-hint {
+  font-size: 10px;
+  text-align: center;
+  margin-top: 8px;
+}
+
 
 </style>
 </head>
@@ -3025,7 +3149,8 @@ window.CTRLS_SUPABASE = {
     gifts: [],
     profiles: {}, // fake shared store · code → profile
     peopleMeta: {}, // profileId -> { hiddenFromGift, deleted }
-    barista: { name: 'Boss', shopName: 'CTRL+S Coffee', promptPay: '081-234-5678', baristaPin: '1337', featuredAsap: null, todayNote: { enabled: false, title: "today's note", body: '' } },
+    beanLove: {}, // asapId -> [profileId] · votes to bring back sold-out beans
+    barista: { name: 'Boss', shopName: 'CTRL+S Coffee', promptPay: '081-234-5678', baristaPin: '1337', featuredAsap: null, outOfTeamSurcharge: 20, todayNote: { enabled: false, title: "today's note", body: '' } },
   };
 
   function load() { return JSON.parse(JSON.stringify(DEFAULT_STATE)); }
@@ -3072,6 +3197,7 @@ window.CTRLS_SUPABASE = {
       gifts: Array.isArray(state?.gifts) ? state.gifts : [],
       profiles: state?.profiles || {},
       peopleMeta: state?.peopleMeta || {},
+      beanLove: state?.beanLove || {},
       barista: { ...DEFAULT_STATE.barista, ...(state?.barista || {}) },
     };
   }
@@ -3213,7 +3339,13 @@ window.CTRLS_SUPABASE = {
     const ref = item.type === 'menu' ? menuById(state, item.refId) : asapById(state, item.refId);
     return (ref ? ref.price : 0) * (item.qty || 1);
   }
-  function orderTotal(state, order) { return order.items.reduce((s, it) => s + priceForItem(state, it), 0); }
+  function outOfTeamSurcharge(state) { return state.barista?.outOfTeamSurcharge ?? 20; }
+  function orderTotal(state, order) {
+    const base = order.items.reduce((s, it) => s + priceForItem(state, it), 0);
+    // Out-of-team orderers pay a per-cup surcharge (snapshotted on the order).
+    const extra = order.outOfTeam ? outOfTeamSurcharge(state) * cupQty(order) : 0;
+    return base + extra;
+  }
   function itemRoast(itemOrDrink) { return itemOrDrink?.roast || 'medium'; }
   function isAvailable(itemOrDrink) { return itemOrDrink?.available !== false; }
   function subscriptionCandidatesForTemplate(state, item) {
@@ -3274,7 +3406,28 @@ window.CTRLS_SUPABASE = {
     return 'CAT-' + out;
   }
 
-  const DEFAULT_AVATAR = { body: 'beige', accent: 'mustard', eyeColor: 'black', expression: 'happy', prop: 'none' };
+  const DEFAULT_AVATAR = { body: 'beige', pattern: 'solid', accent: 'mustard', eyeColor: 'black', expression: 'happy', hat: 'none', face: 'none', neck: 'none', hand: 'none', aura: 'none' };
+
+  // Which slot each accessory belongs to (for migrating legacy single-prop avatars).
+  const PROP_SLOT = {
+    headband: 'hat', beret: 'hat', beanie: 'hat', cap: 'hat', flower: 'hat', bucket: 'hat',
+    headphones: 'hat', tophat: 'hat', layers: 'hat', crown: 'hat', 'party-hat': 'hat', halo: 'hat', wizard: 'hat',
+    glasses: 'face', sunglasses: 'face', monocle: 'face', eyepatch: 'face',
+    bow: 'neck', collar: 'neck', scarf: 'neck', bowtie: 'neck', necktie: 'neck', bandana: 'neck',
+    coffee: 'hand', pencil: 'hand', boba: 'hand', balloon: 'hand', eyedropper: 'hand', fish: 'hand',
+    cursor: 'aura', pentool: 'aura', 'sparkle-aura': 'aura', rainbow: 'aura', 'cmd-key': 'aura',
+  };
+
+  // Migrate an avatar to the slot-based shape (moves legacy `prop` into its slot).
+  function normalizeAvatar(av) {
+    const a = { ...DEFAULT_AVATAR, ...(av || {}) };
+    if (av && av.prop && av.prop !== 'none') {
+      const slot = PROP_SLOT[av.prop];
+      if (slot && (!a[slot] || a[slot] === 'none')) a[slot] = av.prop;
+    }
+    delete a.prop;
+    return a;
+  }
 
   function newProfile(name, existingCodes = []) {
     let code; do { code = genCode(); } while (existingCodes.includes(code));
@@ -3287,6 +3440,8 @@ window.CTRLS_SUPABASE = {
       orderIds: [],
       avatar: { ...DEFAULT_AVATAR },
       stats: { firstOrderDate: null },
+      outOfTeam: false,
+      lineId: '',
     };
   }
 
@@ -3350,53 +3505,82 @@ window.CTRLS_SUPABASE = {
   ];
 
   // Avatar items unlocked per rank (cumulative — each tier adds to all previous)
+  // Avatar items unlocked per rank (cumulative — each tier adds to all previous).
+  // Only items that actually render in cat-svgs.jsx are listed.
   const RANK_UNLOCKS = {
     newfile: {
-      body:       ['cream', 'beige', 'sand', 'calico'],
-      accent:     ['mustard', 'pink', 'lemon'],
+      body:       ['cream', 'beige', 'sand'],
+      pattern:    ['solid', 'tabby'],
+      accent:     ['mustard', 'pink'],
       eyeColor:   ['black', 'brown'],
-      expression: ['happy', 'closed', 'sleepy', 'curious'],
-      prop:       ['none', 'bow', 'collar', 'name-tag', 'star-clip', 'bandana', 'tiny-spoon', 'sticky-note', 'leaf', 'heart-pin'],
+      expression: ['happy', 'closed', 'sleepy'],
+      hat:        ['none', 'headband'],
+      face:       ['none', 'glasses'],
+      neck:       ['none', 'bow', 'collar'],
+      hand:       ['none', 'coffee'],
+      aura:       ['none'],
     },
     copy: {
-      body:       ['caramel', 'rosy', 'mocha'],
-      accent:     ['terracotta', 'coral'],
-      eyeColor:   ['blue', 'rose'],
-      expression: ['wink', 'sparkle', 'shy', 'blep'],
-      prop:       ['beanie', 'beret', 'pencil', 'coffee', 'cursor', 'keyboard', 'tote-bag', 'washi-tape'],
+      body:       ['caramel', 'rosy'],
+      pattern:    ['gray-tabby'],
+      accent:     ['terracotta'],
+      eyeColor:   ['blue'],
+      expression: ['wink', 'sparkle', 'shy'],
+      hat:        ['beret', 'beanie', 'cap'],
+      face:       ['sunglasses'],
+      neck:       ['scarf', 'bowtie'],
+      hand:       ['pencil', 'boba'],
+      aura:       [],
     },
     paste: {
-      body:       ['mint', 'sky', 'lavender'],
-      accent:     ['sage', 'teal'],
-      eyeColor:   ['green', 'amber', 'teal'],
-      expression: ['heart', 'lol', 'grumpy', 'happy-tears'],
-      prop:       ['glasses', 'headband', 'flower', 'cap', 'eyedropper', 'layers', 'clipboard', 'plant', 'mug-stack'],
+      body:       ['mint', 'sky'],
+      pattern:    ['calico', 'tortie'],
+      accent:     ['sage'],
+      eyeColor:   ['green', 'amber'],
+      expression: ['heart', 'lol', 'smug'],
+      hat:        ['flower', 'bucket'],
+      face:       ['monocle'],
+      neck:       ['necktie', 'bandana'],
+      hand:       ['balloon', 'eyedropper'],
+      aura:       ['cursor'],
     },
     undo: {
       body:       [],
+      pattern:    ['cow', 'tuxedo'],
       accent:     ['plum'],
       eyeColor:   ['violet'],
-      expression: ['star', 'smug', 'focus'],
-      prop:       ['sunglasses', 'scarf', 'headphones', 'crown', 'party-hat', 'pentool', 'lightning', 'moon', 'magic-wand'],
+      expression: ['star', 'grumpy'],
+      hat:        ['headphones', 'tophat', 'layers'],
+      face:       ['eyepatch'],
+      neck:       [],
+      hand:       ['fish'],
+      aura:       ['pentool'],
     },
     save: {
       body:       ['charcoal'],
+      pattern:    ['siamese'],
       accent:     ['navy'],
       eyeColor:   [],
-      expression: ['shocked', 'star-pulse', 'heart-float', 'neon-blink'],
-      prop:       ['halo', 'sparkle-aura', 'rainbow', 'cmd-key', 'orbit-stars', 'steam-aura', 'bounce-badge', 'comet-tail'],
+      expression: ['shocked', 'star-pulse', 'heart-float'],
+      hat:        ['crown', 'party-hat', 'halo', 'wizard'],
+      face:       [],
+      neck:       [],
+      hand:       [],
+      aura:       ['sparkle-aura', 'rainbow', 'cmd-key'],
     },
   };
 
   const RANK_ORDER = ['newfile', 'copy', 'paste', 'undo', 'save'];
+  const UNLOCK_CATEGORIES = ['body', 'pattern', 'accent', 'eyeColor', 'expression', 'hat', 'face', 'neck', 'hand', 'aura'];
 
   function unlocksFor(cupCount) {
     const rank = rankFor(cupCount);
     const idx = RANK_ORDER.indexOf(rank.key);
-    const out = { body: [], accent: [], eyeColor: [], expression: [], prop: [] };
+    const out = {};
+    for (const k of UNLOCK_CATEGORIES) out[k] = [];
     for (let i = 0; i <= idx; i++) {
       const tier = RANK_UNLOCKS[RANK_ORDER[i]];
-      for (const k of Object.keys(out)) out[k] = [...out[k], ...(tier[k] || [])];
+      for (const k of UNLOCK_CATEGORIES) out[k] = [...out[k], ...(tier[k] || [])];
     }
     return out;
   }
@@ -3461,12 +3645,12 @@ window.CTRLS_SUPABASE = {
   window.CTRLS = {
     STORAGE_KEY, ACTIVE_CODE_KEY,
     DEFAULT_SIGNATURE_MENU, DEFAULT_ASAP, DEFAULT_OPEN_DAYS,
-    DEFAULT_AVATAR,
-    COLOR_OPTIONS, ROAST_ORDER, ROAST_OPTIONS, RANKS, RANK_UNLOCKS, RANK_ORDER, unlocksFor,
+    DEFAULT_AVATAR, normalizeAvatar, PROP_SLOT,
+    COLOR_OPTIONS, ROAST_ORDER, ROAST_OPTIONS, RANKS, RANK_UNLOCKS, RANK_ORDER, UNLOCK_CATEGORIES, unlocksFor,
     DOW_TH, DOW_EN, DOW_EN_SHORT,
     load, save, isoToday, isoDate, isOpen, orderCutoffForDate, canOrderDate, addMonths, daysBetween,
     remoteConfig, remoteEnabled, pullRemoteState, pushRemoteState, confirmOrders, subscribeRemoteState, adoptRemoteState,
-    menuById, asapById, priceForItem, orderTotal, itemRoast, isAvailable, subscriptionCandidatesForTemplate, subscriptionTemplateAvailable, isConfirmedOrder, orderBelongsToProfile, cupQty, cupCountForProfile, itemLabel, itemColor,
+    menuById, asapById, priceForItem, orderTotal, outOfTeamSurcharge, itemRoast, isAvailable, subscriptionCandidatesForTemplate, subscriptionTemplateAvailable, isConfirmedOrder, orderBelongsToProfile, cupQty, cupCountForProfile, itemLabel, itemColor,
     activeCode, setActiveCode, genCode, newProfile,
     getActiveProfile, upsertProfile, profileByCode,
     rankFor, nextRank,
@@ -3489,24 +3673,33 @@ const EXPRESSIONS = [
   'sparkle', 'happy', 'sleepy', 'star',
   'wink', 'heart', 'closed', 'lol',
   'shy', 'grumpy', 'smug', 'shocked',
-  'curious', 'blep', 'happy-tears', 'focus',
   // CTRL+S animated
-  'star-pulse', 'heart-float', 'neon-blink',
+  'star-pulse', 'heart-float',
 ];
 
-const PROPS = [
-  // CTRL+N
-  'none', 'bow', 'collar', 'name-tag', 'star-clip', 'bandana', 'tiny-spoon',
-  'sticky-note', 'leaf', 'heart-pin',
-  // CTRL+C
-  'beanie', 'beret', 'pencil', 'coffee', 'cursor', 'keyboard', 'tote-bag', 'washi-tape',
-  // CTRL+V
-  'glasses', 'headband', 'flower', 'cap', 'eyedropper', 'layers', 'clipboard', 'plant', 'mug-stack',
-  // CTRL+Z
-  'sunglasses', 'scarf', 'headphones', 'crown', 'party-hat', 'pentool', 'lightning', 'moon', 'magic-wand',
-  // CTRL+S (animated)
-  'halo', 'sparkle-aura', 'rainbow', 'cmd-key', 'orbit-stars', 'steam-aura', 'bounce-badge', 'comet-tail',
+// Body silhouette — shared by the fill and the pattern clip-path.
+const BODY_PATH = "M 22 58 C 18 50, 20 38, 26 32 L 30 24 L 38 32 C 44 30, 56 30, 62 32 L 70 24 L 74 32 C 80 38, 82 50, 78 58 C 80 66, 76 78, 70 80 L 30 80 C 24 78, 20 66, 22 58 Z";
+
+// Coat patterns — overlaid on the body color, clipped to the silhouette.
+const PATTERNS = ['solid', 'tabby', 'gray-tabby', 'calico', 'tortie', 'cow', 'tuxedo', 'siamese'];
+
+// Accessories grouped by body slot — one item per slot can be worn at once.
+const HATS  = ['none', 'headband', 'beret', 'beanie', 'cap', 'flower', 'bucket', 'headphones', 'tophat', 'layers', 'crown', 'party-hat', 'halo', 'wizard'];
+const FACES = ['none', 'glasses', 'sunglasses', 'monocle', 'eyepatch'];
+const NECKS = ['none', 'bow', 'collar', 'scarf', 'bowtie', 'necktie', 'bandana'];
+const HANDS = ['none', 'coffee', 'pencil', 'boba', 'balloon', 'eyedropper', 'fish'];
+const AURAS = ['none', 'cursor', 'pentool', 'sparkle-aura', 'rainbow', 'cmd-key'];
+
+const SLOTS = [
+  { key: 'hat',  label: 'hat',  items: HATS },
+  { key: 'face', label: 'face', items: FACES },
+  { key: 'neck', label: 'neck', items: NECKS },
+  { key: 'hand', label: 'item', items: HANDS },
+  { key: 'aura', label: 'aura', items: AURAS },
 ];
+
+// Flat list of every accessory (legacy + full set).
+const PROPS = ['none', ...HATS.slice(1), ...FACES.slice(1), ...NECKS.slice(1), ...HANDS.slice(1), ...AURAS.slice(1)];
 
 const BODY_COLORS = [
   { id: 'cream',     fill: '#F6F1E8' },
@@ -3516,9 +3709,6 @@ const BODY_COLORS = [
   { id: 'rosy',      fill: '#F0CBC2' },
   { id: 'mint',      fill: '#CDE0CC' },
   { id: 'sky',       fill: '#C6D4E2' },
-  { id: 'mocha',     fill: '#8B5E45' },
-  { id: 'lavender',  fill: '#D9CBE8' },
-  { id: 'calico',    fill: '#E6C58F' },
   { id: 'charcoal',  fill: '#3A3A3A' },
 ];
 
@@ -3529,9 +3719,6 @@ const ACCENT_COLORS = [
   { id: 'sage',       fill: '#8FA287' },
   { id: 'plum',       fill: '#9F6B8B' },
   { id: 'navy',       fill: '#3C5878' },
-  { id: 'lemon',      fill: '#F5D155' },
-  { id: 'teal',       fill: '#5AA6A4' },
-  { id: 'coral',      fill: '#E9786B' },
 ];
 
 const EYE_COLORS = [
@@ -3541,8 +3728,6 @@ const EYE_COLORS = [
   { id: 'green',  fill: '#5E8050' },
   { id: 'amber',  fill: '#C97B2F' },
   { id: 'violet', fill: '#7B5B8E' },
-  { id: 'teal',   fill: '#2F8F8B' },
-  { id: 'rose',   fill: '#B84967' },
 ];
 
 const CatBase = ({
@@ -3552,7 +3737,13 @@ const CatBase = ({
   accent = '#D5A23B',          // ear inner + cheek blush
   eyeColor,                    // overrides stroke for eye fill
   expression = 'sparkle',
-  prop = 'none',
+  prop = 'none',               // legacy single accessory
+  hat = 'none',
+  face = 'none',
+  neck = 'none',
+  hand = 'none',
+  aura = 'none',
+  pattern = 'solid',
   bg = 'transparent',
 }) => {
   const isDark = fill === '#3A3A3A' || fill === '#2B2B2B';
@@ -3563,16 +3754,81 @@ const CatBase = ({
     ? (eyeColor && !DARK_EYE_COLORS.includes(eyeColor) ? eyeColor : '#E8E0D4')
     : (eyeColor || stroke);
 
+  // Merge every worn accessory (slots + legacy prop) into one active set.
+  const activeProps = [hat, face, neck, hand, aura, prop].filter((p) => p && p !== 'none');
+  const has = (n) => activeProps.includes(n);
+
+  const uidRef = React.useRef(null);
+  if (!uidRef.current) uidRef.current = Math.random().toString(36).slice(2, 8);
+  const clipId = 'catclip-' + uidRef.current;
+
   return (
     <svg width={size} height={size} viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
       {/* body — wobbly outline */}
       <path
-        d="M 22 58 C 18 50, 20 38, 26 32 L 30 24 L 38 32 C 44 30, 56 30, 62 32 L 70 24 L 74 32 C 80 38, 82 50, 78 58 C 80 66, 76 78, 70 80 L 30 80 C 24 78, 20 66, 22 58 Z"
+        d={BODY_PATH}
         fill={fill}
         stroke={out}
         strokeWidth="1.5"
         strokeLinejoin="round"
       />
+
+      {/* === Coat pattern (clipped to body) === */}
+      {pattern && pattern !== 'solid' && (
+        <>
+          <defs><clipPath id={clipId}><path d={BODY_PATH} /></clipPath></defs>
+          <g clipPath={`url(#${clipId})`}>
+            {(pattern === 'tabby' || pattern === 'gray-tabby') && (() => {
+              const c = pattern === 'tabby' ? '#B5703A' : '#6E6E6E';
+              return (
+                <g stroke={c} strokeWidth="2.4" fill="none" opacity="0.5" strokeLinecap="round">
+                  <path d="M 42 30 L 45 40 M 50 28 L 50 40 M 58 30 L 55 40" />
+                  <path d="M 24 42 Q 32 44, 24 50" />
+                  <path d="M 76 42 Q 68 44, 76 50" />
+                  <path d="M 26 60 Q 34 62, 26 68" />
+                  <path d="M 74 60 Q 66 62, 74 68" />
+                  <path d="M 44 74 L 44 80 M 50 74 L 50 80 M 56 74 L 56 80" />
+                </g>
+              );
+            })()}
+            {pattern === 'calico' && (
+              <>
+                <path d="M 20 30 Q 42 26, 46 30 Q 48 50, 30 56 Q 18 48, 20 30 Z" fill="#E8923A" opacity="0.9" />
+                <path d="M 58 28 Q 80 30, 80 50 Q 70 58, 56 48 Q 54 34, 58 28 Z" fill="#3A3A3A" opacity="0.85" />
+                <path d="M 60 64 Q 74 64, 76 76 Q 64 80, 58 72 Z" fill="#E8923A" opacity="0.85" />
+              </>
+            )}
+            {pattern === 'tortie' && (
+              [[30,40,'#3A3A3A'],[60,36,'#E8923A'],[40,60,'#E8923A'],[66,58,'#3A3A3A'],[50,72,'#3A3A3A'],[28,66,'#E8923A']].map(([x,y,c],i) => (
+                <ellipse key={i} cx={x} cy={y} rx="9" ry="8" fill={c} opacity="0.7" />
+              ))
+            )}
+            {pattern === 'cow' && (
+              <>
+                <path d="M 24 34 Q 40 30, 42 44 Q 36 54, 24 50 Z" fill="#2B2B2B" opacity="0.9" />
+                <path d="M 58 50 Q 76 48, 78 62 Q 68 74, 56 66 Q 52 56, 58 50 Z" fill="#2B2B2B" opacity="0.9" />
+                <ellipse cx="40" cy="71" rx="7" ry="5" fill="#2B2B2B" opacity="0.9" />
+              </>
+            )}
+            {pattern === 'tuxedo' && (
+              <>
+                <path d="M 50 54 Q 42 60, 40 80 L 60 80 Q 58 60, 50 54 Z" fill="#F6F1E8" />
+                <ellipse cx="50" cy="64" rx="11" ry="8" fill="#F6F1E8" />
+                <path d="M 30 24 L 38 32 L 34 34 Z" fill="#F6F1E8" opacity="0.9" />
+              </>
+            )}
+            {pattern === 'siamese' && (
+              <>
+                <path d="M 26 32 L 30 24 L 38 32 Z" fill="#5A4636" opacity="0.75" />
+                <path d="M 74 32 L 70 24 L 62 32 Z" fill="#5A4636" opacity="0.75" />
+                <ellipse cx="50" cy="56" rx="15" ry="13" fill="#6B5443" opacity="0.4" />
+                <path d="M 22 72 Q 50 68, 78 72 L 78 80 L 22 80 Z" fill="#5A4636" opacity="0.6" />
+              </>
+            )}
+          </g>
+        </>
+      )}
+
       {/* inner ears */}
       <path d="M 30 24 L 32 30 L 36 30 Z" fill={accent} opacity="0.7" />
       <path d="M 70 24 L 68 30 L 64 30 Z" fill={accent} opacity="0.7" />
@@ -3684,39 +3940,6 @@ const CatBase = ({
           <circle cx="60" cy="52" r="2" fill={eye} />
         </>
       )}
-      {expression === 'curious' && (
-        <>
-          <circle cx="39" cy="52" r="4.2" fill="#fff" stroke={eye} strokeWidth="1.3" />
-          <circle cx="39" cy="52" r="2" fill={eye} />
-          <circle cx="61" cy="53" r="2.8" fill={eye} />
-          <path d="M 55 45 Q 60 42, 65 45" stroke={eye} strokeWidth="1.4" fill="none" strokeLinecap="round" />
-        </>
-      )}
-      {expression === 'blep' && (
-        <>
-          <circle cx="40" cy="52" r="3.4" fill={eye} />
-          <circle cx="60" cy="52" r="3.4" fill={eye} />
-          <circle cx="41.2" cy="50.8" r="1" fill="#fff" />
-          <circle cx="61.2" cy="50.8" r="1" fill="#fff" />
-        </>
-      )}
-      {expression === 'happy-tears' && (
-        <>
-          <path d="M 36 54 Q 40 47, 44 54" stroke={eye} strokeWidth="2" fill="none" strokeLinecap="round" />
-          <path d="M 56 54 Q 60 47, 64 54" stroke={eye} strokeWidth="2" fill="none" strokeLinecap="round" />
-          <path d="M 33 55 Q 30 59, 33 62 Q 36 59, 33 55 Z" fill="#8BA7B8" opacity="0.9" />
-          <path d="M 67 55 Q 64 59, 67 62 Q 70 59, 67 55 Z" fill="#8BA7B8" opacity="0.9" />
-        </>
-      )}
-      {expression === 'focus' && (
-        <>
-          <path d="M 34 49 L 46 49 L 44 56 L 36 56 Z" fill="none" stroke={eye} strokeWidth="1.5" strokeLinejoin="round" />
-          <path d="M 54 49 L 66 49 L 64 56 L 56 56 Z" fill="none" stroke={eye} strokeWidth="1.5" strokeLinejoin="round" />
-          <line x1="46" y1="51" x2="54" y2="51" stroke={eye} strokeWidth="1.4" />
-          <circle cx="40" cy="53" r="1.4" fill={eye} />
-          <circle cx="60" cy="53" r="1.4" fill={eye} />
-        </>
-      )}
       {expression === 'star-pulse' && (
         <>
           {[40, 60].map((cx) => (
@@ -3743,17 +3966,6 @@ const CatBase = ({
             fill="#E7536E" opacity="0.6" className="cat-heart-mini" />
         </>
       )}
-      {expression === 'neon-blink' && (
-        <>
-          {[40, 60].map((cx) => (
-            <g key={cx} transform={`translate(${cx} 52)`}>
-              <circle r="5" fill="#5AA6A4" opacity="0.18" className="cat-eye-neon-glow" />
-              <circle r="3.4" fill={eye} className="cat-eye-neon" />
-              <circle cx="1.2" cy="-1.2" r="1" fill="#fff" opacity="0.8" />
-            </g>
-          ))}
-        </>
-      )}
 
       {/* nose + mouth */}
       {expression === 'grumpy' ? (
@@ -3774,12 +3986,6 @@ const CatBase = ({
           {/* big open smile */}
           <path d="M 42 64 Q 50 73, 58 64 Z" fill="#fff" stroke={out} strokeWidth="1.4" strokeLinejoin="round" />
         </>
-      ) : expression === 'blep' ? (
-        <>
-          <path d="M 49 60 L 51 60 L 50 62 Z" fill={out} />
-          <path d="M 50 62 Q 47 65, 45 64 M 50 62 Q 53 65, 55 64" stroke={out} strokeWidth="1.2" fill="none" strokeLinecap="round" />
-          <path d="M 49 66 Q 50 70, 53 66 Z" fill="#E7536E" stroke={out} strokeWidth="0.8" />
-        </>
       ) : (
         <>
           <path d="M 49 60 L 51 60 L 50 62 Z" fill={out} />
@@ -3792,34 +3998,34 @@ const CatBase = ({
       <path d="M 70 60 L 62 60 M 70 64 L 62 63" stroke={out} strokeWidth="1" strokeLinecap="round" opacity="0.55" />
 
       {/* === Props === */}
-      {prop === 'beret' && (
+      {has('beret') && (
         <g>
           <ellipse cx="44" cy="22" rx="18" ry="6" fill="#C97B5F" stroke={out} strokeWidth="1.2" />
           <circle cx="32" cy="18" r="3" fill="#C97B5F" stroke={out} strokeWidth="1.2" />
         </g>
       )}
-      {prop === 'beanie' && (
+      {has('beanie') && (
         <g>
           <path d="M 24 28 Q 24 12, 50 10 Q 76 12, 76 28 Z" fill="#8FA287" stroke={out} strokeWidth="1.4" strokeLinejoin="round" />
           <path d="M 22 26 L 78 26 L 78 32 L 22 32 Z" fill="#5E8050" stroke={out} strokeWidth="1.2" />
           <circle cx="50" cy="10" r="3" fill="#F6F1E8" stroke={out} strokeWidth="1" />
         </g>
       )}
-      {prop === 'bow' && (
+      {has('bow') && (
         <g transform="translate(50, 20)">
           <path d="M -10 0 Q -14 -5, -14 0 Q -14 5, -10 0 Z" fill="#E7536E" stroke={out} strokeWidth="1.2" />
           <path d="M 10 0 Q 14 -5, 14 0 Q 14 5, 10 0 Z" fill="#E7536E" stroke={out} strokeWidth="1.2" />
           <circle cx="0" cy="0" r="2.4" fill="#E7536E" stroke={out} strokeWidth="1.2" />
         </g>
       )}
-      {prop === 'glasses' && (
+      {has('glasses') && (
         <g>
           <circle cx="40" cy="52" r="6.5" fill="none" stroke={out} strokeWidth="1.5" />
           <circle cx="60" cy="52" r="6.5" fill="none" stroke={out} strokeWidth="1.5" />
           <line x1="46.5" y1="52" x2="53.5" y2="52" stroke={out} strokeWidth="1.5" />
         </g>
       )}
-      {prop === 'sunglasses' && (
+      {has('sunglasses') && (
         <g>
           <path d="M 33 49 L 47 49 L 47 56 Q 47 58, 45 58 L 35 58 Q 33 58, 33 56 Z" fill="#1A1A1A" stroke={out} strokeWidth="1" />
           <path d="M 53 49 L 67 49 L 67 56 Q 67 58, 65 58 L 55 58 Q 53 58, 53 56 Z" fill="#1A1A1A" stroke={out} strokeWidth="1" />
@@ -3829,7 +4035,7 @@ const CatBase = ({
           <path d="M 56 51 L 59 53" stroke="#fff" strokeWidth="1" opacity="0.6" />
         </g>
       )}
-      {prop === 'headphones' && (
+      {has('headphones') && (
         <g>
           <path d="M 22 50 Q 22 18, 50 18 Q 78 18, 78 50" fill="none" stroke={out} strokeWidth="3.5" strokeLinecap="round" />
           <rect x="16" y="44" width="10" height="14" rx="3" fill={out} stroke={out} strokeWidth="1" />
@@ -3837,7 +4043,7 @@ const CatBase = ({
           <rect x="18" y="46" width="6" height="10" rx="2" fill={accent} />
         </g>
       )}
-      {prop === 'scarf' && (
+      {has('scarf') && (
         <g>
           <path d="M 22 76 Q 50 70, 78 76 L 78 84 L 22 84 Z" fill="#C97B5F" stroke={out} strokeWidth="1.2" strokeLinejoin="round" />
           <path d="M 30 78 L 32 80 M 38 77 L 40 79 M 46 76 L 48 78 M 54 76 L 56 78 M 62 77 L 64 79 M 70 78 L 72 80" stroke={out} strokeWidth="0.7" opacity="0.5" />
@@ -3845,7 +4051,7 @@ const CatBase = ({
           <path d="M 56 80 Q 60 85, 56 90 Q 62 88, 64 84 Z" fill="#C97B5F" stroke={out} strokeWidth="1" />
         </g>
       )}
-      {prop === 'headband' && (
+      {has('headband') && (
         <g>
           <path d="M 24 30 Q 50 22, 76 30 L 76 36 Q 50 30, 24 36 Z" fill="#D5A23B" stroke={out} strokeWidth="1.2" strokeLinejoin="round" />
           <path d="M 50 22 L 50 18 Q 47 16, 50 14 Q 53 16, 50 18 Z" fill="#D5A23B" stroke={out} strokeWidth="1" />
@@ -3853,7 +4059,7 @@ const CatBase = ({
       )}
 
       {/* === New props — CTRL+N tier === */}
-      {prop === 'collar' && (
+      {has('collar') && (
         <g>
           <path d="M 30 74 Q 50 70, 70 74" stroke={accent} strokeWidth="5" fill="none" strokeLinecap="round" />
           <path d="M 30 74 Q 50 70, 70 74" stroke={out} strokeWidth="0.8" fill="none" strokeLinecap="round" opacity="0.4" />
@@ -3861,55 +4067,9 @@ const CatBase = ({
           <path d="M 49 74 L 49 77 L 51 77 L 51 74" fill={out} opacity="0.35" />
         </g>
       )}
-      {prop === 'name-tag' && (
-        <g transform="translate(50, 76)">
-          <rect x="-13" y="-5" width="26" height="11" rx="3" fill="#F6F1E8" stroke={out} strokeWidth="1.1" />
-          <circle cx="-8" cy="0" r="1.5" fill={accent} />
-          <path d="M -3 -1.5 L 8 -1.5 M -3 2 L 5 2" stroke={out} strokeWidth="0.8" strokeLinecap="round" opacity="0.55" />
-        </g>
-      )}
-      {prop === 'star-clip' && (
-        <g transform="translate(67, 28) rotate(12)">
-          <path d="M 0 -6 L 1.6 -1.8 L 6 0 L 1.6 1.8 L 0 6 L -1.6 1.8 L -6 0 L -1.6 -1.8 Z"
-            fill="#F5D155" stroke={out} strokeWidth="1" />
-          <path d="M -7 5 Q -2 9, 6 5" stroke={out} strokeWidth="0.9" fill="none" strokeLinecap="round" opacity="0.55" />
-        </g>
-      )}
-      {prop === 'bandana' && (
-        <g>
-          <path d="M 25 32 Q 50 25, 75 32 L 73 38 Q 50 32, 27 38 Z" fill="#E7536E" stroke={out} strokeWidth="1.1" strokeLinejoin="round" />
-          <path d="M 72 34 L 82 30 L 78 40 Z" fill="#E7536E" stroke={out} strokeWidth="1" strokeLinejoin="round" />
-          <path d="M 36 31 L 39 34 M 49 29 L 52 32 M 62 31 L 65 34" stroke="#fff" strokeWidth="1" opacity="0.65" strokeLinecap="round" />
-        </g>
-      )}
-      {prop === 'tiny-spoon' && (
-        <g transform="translate(29, 73) rotate(-28)">
-          <ellipse cx="0" cy="-9" rx="3" ry="5" fill="#D9DDE3" stroke={out} strokeWidth="0.9" />
-          <rect x="-1" y="-5" width="2" height="18" rx="1" fill="#D9DDE3" stroke={out} strokeWidth="0.6" />
-        </g>
-      )}
-      {prop === 'sticky-note' && (
-        <g transform="translate(26, 26) rotate(-9)">
-          <rect x="-8" y="-7" width="18" height="15" rx="2" fill="#F5D155" stroke={out} strokeWidth="1" />
-          <path d="M 5 8 L 10 3 L 10 8 Z" fill="#D5A23B" stroke={out} strokeWidth="0.6" />
-          <path d="M -4 -2 L 5 -2 M -4 2 L 2 2" stroke={out} strokeWidth="0.7" opacity="0.45" strokeLinecap="round" />
-        </g>
-      )}
-      {prop === 'leaf' && (
-        <g transform="translate(70, 25) rotate(22)">
-          <path d="M 0 9 C -10 3, -8 -9, 2 -10 C 10 -8, 9 3, 0 9 Z" fill="#8FA287" stroke={out} strokeWidth="1" />
-          <path d="M 0 8 C 0 2, 1 -4, 4 -8" stroke="#5E8050" strokeWidth="0.9" fill="none" strokeLinecap="round" />
-        </g>
-      )}
-      {prop === 'heart-pin' && (
-        <g transform="translate(32, 67) rotate(-8)">
-          <path d="M 0 3 C -5 -2, -8 2, -5 6 C -3 8, 0 10, 0 10 C 0 10, 3 8, 5 6 C 8 2, 5 -2, 0 3 Z"
-            fill="#E7536E" stroke={out} strokeWidth="0.9" />
-        </g>
-      )}
 
       {/* === New props — CTRL+C tier === */}
-      {prop === 'pencil' && (
+      {has('pencil') && (
         <g transform="translate(72, 20) rotate(18)">
           <rect x="-2.5" y="-16" width="5" height="4" rx="1" fill="#FFB3BA" stroke={out} strokeWidth="0.9" />
           <rect x="-2.5" y="-12" width="5" height="2" fill="#BBBEC4" stroke={out} strokeWidth="0.5" />
@@ -3919,7 +4079,7 @@ const CatBase = ({
           <path d="M -0.6 9.5 L 0 13 L 0.6 9.5 Z" fill="#555" />
         </g>
       )}
-      {prop === 'coffee' && (
+      {has('coffee') && (
         <g transform="translate(73, 62)">
           <path d="M -6 -8 L -6 5 Q -6 8, -3 8 L 3 8 Q 6 8, 6 5 L 6 -8 Z" fill={fill} stroke={out} strokeWidth="1.2" />
           <path d="M 6 -3 Q 10 -3, 10 1 Q 10 4, 6 4" fill="none" stroke={out} strokeWidth="1.2" />
@@ -3927,29 +4087,9 @@ const CatBase = ({
           <path d="M -2 -10 Q -1.5 -13, -1 -10 M 1 -10 Q 1.5 -13, 2 -10" stroke={out} strokeWidth="0.9" fill="none" strokeLinecap="round" opacity="0.45" />
         </g>
       )}
-      {prop === 'keyboard' && (
-        <g transform="translate(50, 83)">
-          <rect x="-23" y="-7" width="46" height="12" rx="3" fill="#F6F1E8" stroke={out} strokeWidth="1.1" />
-          {[-15,-8,-1,6,13].map((x) => <rect key={x} x={x} y="-3.5" width="4" height="3" rx="0.8" fill={out} opacity="0.35" />)}
-          <rect x="-6" y="1" width="18" height="2.5" rx="1" fill={out} opacity="0.28" />
-        </g>
-      )}
-      {prop === 'tote-bag' && (
-        <g transform="translate(73, 72)">
-          <path d="M -8 -6 L 7 -6 L 9 10 L -10 10 Z" fill="#F6F1E8" stroke={out} strokeWidth="1.1" strokeLinejoin="round" />
-          <path d="M -4 -6 Q -4 -13, 0 -13 Q 4 -13, 4 -6" fill="none" stroke={out} strokeWidth="1" strokeLinecap="round" />
-          <path d="M -4 0 L 4 0" stroke={accent} strokeWidth="1.5" strokeLinecap="round" />
-        </g>
-      )}
-      {prop === 'washi-tape' && (
-        <g transform="translate(50, 28) rotate(-5)">
-          <rect x="-19" y="-5" width="38" height="10" rx="3" fill="#E7A2AC" stroke={out} strokeWidth="1" />
-          <path d="M -12 -5 L -6 5 M 0 -5 L 6 5 M 12 -5 L 18 5" stroke="#fff" strokeWidth="1.1" opacity="0.55" />
-        </g>
-      )}
 
       {/* === New props — CTRL+V tier === */}
-      {prop === 'flower' && (
+      {has('flower') && (
         <g>
           <path d="M 28 28 Q 50 21, 72 28" stroke="#7A9E7E" strokeWidth="2" fill="none" />
           {[{x:33,y:23,c:'#F0A8B8'},{x:50,y:17,c:'#F5D155'},{x:67,y:23,c:'#F0A8B8'}].map(({x,y,c}) => (
@@ -3965,7 +4105,7 @@ const CatBase = ({
           <path d="M 55 25 Q 57 20, 60 25 Z" fill="#7A9E7E" />
         </g>
       )}
-      {prop === 'cap' && (
+      {has('cap') && (
         <g>
           <path d="M 26 30 Q 26 13, 50 12 Q 74 13, 74 30 Z" fill={accent} stroke={out} strokeWidth="1.3" strokeLinejoin="round" />
           <path d="M 20 30 L 80 30 L 78 35 Q 50 38, 22 35 Z" fill={accent} stroke={out} strokeWidth="1.2" strokeLinejoin="round" />
@@ -3973,33 +4113,9 @@ const CatBase = ({
           <circle cx="50" cy="12" r="2.2" fill={out} />
         </g>
       )}
-      {prop === 'clipboard' && (
-        <g transform="translate(74, 62) rotate(10)">
-          <rect x="-9" y="-13" width="18" height="24" rx="2" fill="#F6F1E8" stroke={out} strokeWidth="1" />
-          <rect x="-4" y="-16" width="8" height="5" rx="2" fill="#D5A23B" stroke={out} strokeWidth="0.8" />
-          <path d="M -5 -5 L 5 -5 M -5 0 L 4 0 M -5 5 L 2 5" stroke={out} strokeWidth="0.8" opacity="0.45" strokeLinecap="round" />
-        </g>
-      )}
-      {prop === 'plant' && (
-        <g transform="translate(26, 70)">
-          <path d="M -7 2 L 7 2 L 5 13 L -5 13 Z" fill="#C97B5F" stroke={out} strokeWidth="1" />
-          <path d="M 0 3 C -6 -2, -8 -10, -2 -11 C 2 -10, 1 -4, 0 3 Z" fill="#8FA287" stroke={out} strokeWidth="0.8" />
-          <path d="M 0 3 C 5 -2, 9 -9, 4 -11 C 0 -10, 0 -4, 0 3 Z" fill="#5E8050" stroke={out} strokeWidth="0.8" />
-        </g>
-      )}
-      {prop === 'mug-stack' && (
-        <g transform="translate(75, 66)">
-          {[{y:0,c:'#F6F1E8'},{y:8,c:'#E7A2AC'}].map(({y,c}) => (
-            <g key={y} transform={`translate(0 ${y})`}>
-              <path d="M -8 -7 L -8 3 Q -8 6, -5 6 L 5 6 Q 8 6, 8 3 L 8 -7 Z" fill={c} stroke={out} strokeWidth="1" />
-              <path d="M 8 -3 Q 12 -3, 12 1 Q 12 4, 8 4" fill="none" stroke={out} strokeWidth="1" />
-            </g>
-          ))}
-        </g>
-      )}
 
       {/* === New props — CTRL+Z tier === */}
-      {prop === 'crown' && (
+      {has('crown') && (
         <g>
           <path d="M 28 31 L 33 17 L 42 25 L 50 12 L 58 25 L 67 17 L 72 31 Z"
             fill="#D5A23B" stroke={out} strokeWidth="1.3" strokeLinejoin="round" />
@@ -4011,7 +4127,7 @@ const CatBase = ({
           <circle cx="58" cy="27" r="1.5" fill="#D5A23B" opacity="0.6" />
         </g>
       )}
-      {prop === 'party-hat' && (
+      {has('party-hat') && (
         <g>
           <path d="M 44 7 L 28 34 L 64 34 Z" fill="#E7A2AC" stroke={out} strokeWidth="1.3" strokeLinejoin="round" />
           <path d="M 36 25 L 57 25" stroke={out} strokeWidth="1" opacity="0.25" />
@@ -4023,28 +4139,9 @@ const CatBase = ({
           <path d="M 28 34 Q 46 40, 64 34" stroke={out} strokeWidth="0.9" fill="none" strokeDasharray="2.5,2" />
         </g>
       )}
-      {prop === 'lightning' && (
-        <g transform="translate(72, 20) rotate(10)">
-          <path d="M -2 -13 L -12 3 L -4 2 L -8 15 L 8 -4 L 0 -3 Z" fill="#F5D155" stroke={out} strokeWidth="1.2" strokeLinejoin="round" />
-        </g>
-      )}
-      {prop === 'moon' && (
-        <g transform="translate(70, 20)">
-          <path d="M 7 -10 C 0 -8, -4 -2, -2 5 C 0 12, 7 14, 13 9 C 4 10, -1 3, 1 -4 C 2 -8, 4 -10, 7 -10 Z"
-            fill="#F5D155" stroke={out} strokeWidth="1.1" />
-          <circle cx="-8" cy="-7" r="1.4" fill={out} opacity="0.35" />
-          <circle cx="-13" cy="2" r="1" fill={out} opacity="0.25" />
-        </g>
-      )}
-      {prop === 'magic-wand' && (
-        <g transform="translate(73, 28) rotate(34)">
-          <rect x="-1.5" y="-15" width="3" height="28" rx="1.2" fill="#3C5878" stroke={out} strokeWidth="0.8" />
-          <path d="M 0 -22 L 1.5 -17 L 6 -15 L 1.5 -13 L 0 -8 L -1.5 -13 L -6 -15 L -1.5 -17 Z" fill="#F5D155" stroke={out} strokeWidth="0.8" />
-        </g>
-      )}
 
       {/* === Tool-themed props — CTRL+C tier === */}
-      {prop === 'cursor' && (
+      {has('cursor') && (
         <g transform="translate(67, 8)">
           {/* Classic arrow cursor hovering above head */}
           <path d="M -7 -7 L -7 9 L -3 5.5 L -1 11 L 2 10 L 0 4.5 L 5 4.5 Z"
@@ -4055,7 +4152,7 @@ const CatBase = ({
       )}
 
       {/* === Tool-themed props — CTRL+V tier === */}
-      {prop === 'eyedropper' && (
+      {has('eyedropper') && (
         <g transform="translate(74, 20) rotate(-25)">
           <rect x="-3" y="-15" width="6" height="18" rx="2.5" fill="#8BA7B8" stroke={out} strokeWidth="1" />
           <path d="M -2 3 L 0 9 L 2 3 Z" fill="#8BA7B8" stroke={out} strokeWidth="1" />
@@ -4063,7 +4160,7 @@ const CatBase = ({
           <rect x="-2.2" y="-5" width="4.4" height="2.5" rx="1" fill={out} opacity="0.25" />
         </g>
       )}
-      {prop === 'layers' && (
+      {has('layers') && (
         <g>
           {/* Stacked layers panel badge on head */}
           {[{y:30,c:'#8BA7B8',op:0.7},{y:23,c:'#D5A23B',op:0.85},{y:16,c:'#E7A2AC',op:1}].map(({y,c,op},i) => (
@@ -4077,7 +4174,7 @@ const CatBase = ({
       )}
 
       {/* === Tool-themed props — CTRL+Z tier === */}
-      {prop === 'pentool' && (
+      {has('pentool') && (
         <g>
           {/* Pen nib pointing up */}
           <g transform="translate(50, 6)">
@@ -4100,14 +4197,14 @@ const CatBase = ({
       )}
 
       {/* === Animated props — CTRL+S tier === */}
-      {prop === 'halo' && (
+      {has('halo') && (
         <g>
           <ellipse cx="50" cy="13" rx="21" ry="5" fill="none" stroke="#F6C850" strokeWidth="8" opacity="0.18" className="cat-halo-glow" />
           <ellipse cx="50" cy="13" rx="21" ry="5" fill="none" stroke="#D5A23B" strokeWidth="2.8" className="cat-halo" />
           <path d="M 32 11 Q 33 8.5, 37 11" stroke="#fff" strokeWidth="1.4" opacity="0.65" strokeLinecap="round" />
         </g>
       )}
-      {prop === 'sparkle-aura' && (
+      {has('sparkle-aura') && (
         <g>
           {[
             {x:13,y:34,s:3.5,d:'0s'},{x:87,y:38,s:3,d:'0.55s'},
@@ -4123,7 +4220,7 @@ const CatBase = ({
           ))}
         </g>
       )}
-      {prop === 'rainbow' && (
+      {has('rainbow') && (
         <g className="cat-rainbow">
           {[
             {offset:0, color:'#E7536E'},
@@ -4138,7 +4235,7 @@ const CatBase = ({
           ))}
         </g>
       )}
-      {prop === 'cmd-key' && (
+      {has('cmd-key') && (
         <g className="cat-cmd-float">
           {/* Key cap */}
           <rect x="30" y="4" width="40" height="22" rx="6"
@@ -4156,34 +4253,94 @@ const CatBase = ({
           <rect x="47" y="12" width="6" height="6" fill={isDark ? '#E8E0D4' : '#2B2B2B'} />
         </g>
       )}
-      {prop === 'orbit-stars' && (
-        <g className="cat-orbit">
-          <ellipse cx="50" cy="38" rx="35" ry="11" fill="none" stroke="#D5A23B" strokeWidth="1" strokeDasharray="3,3" opacity="0.35" />
-          {[{x:18,y:38,s:3},{x:50,y:27,s:2.3},{x:82,y:38,s:3},{x:50,y:49,s:2.3}].map(({x,y,s}) => (
-            <path key={`${x}-${y}`} d={`M ${x} ${y-s} L ${x+s*0.4} ${y-s*0.4} L ${x+s} ${y} L ${x+s*0.4} ${y+s*0.4} L ${x} ${y+s} L ${x-s*0.4} ${y+s*0.4} L ${x-s} ${y} L ${x-s*0.4} ${y-s*0.4} Z`} fill="#F5D155" stroke={out} strokeWidth="0.5" />
-          ))}
+
+      {/* === New hats === */}
+      {has('bucket') && (
+        <g>
+          <path d="M 30 28 Q 30 14, 50 14 Q 70 14, 70 28 Z" fill="#8FA287" stroke={out} strokeWidth="1.3" strokeLinejoin="round" />
+          <path d="M 24 28 Q 50 35, 76 28 Q 73 33, 50 34 Q 27 33, 24 28 Z" fill="#7A9070" stroke={out} strokeWidth="1.2" strokeLinejoin="round" />
         </g>
       )}
-      {prop === 'steam-aura' && (
-        <g className="cat-steam-aura">
-          {[37,50,63].map((x, i) => (
-            <path key={x} d={`M ${x} 24 C ${x-5} 17, ${x+5} 13, ${x} 6 C ${x+7} 11, ${x-3} 17, ${x+3} 23`}
-              fill="none" stroke={i === 1 ? '#D5A23B' : out} strokeWidth="2" strokeLinecap="round" opacity="0.55" />
-          ))}
+      {has('tophat') && (
+        <g>
+          <rect x="36" y="6" width="28" height="21" rx="2" fill="#2B2B2B" stroke={out} strokeWidth="1.2" />
+          <rect x="36" y="20" width="28" height="4" fill="#C97B5F" />
+          <rect x="27" y="26" width="46" height="5" rx="2.5" fill="#2B2B2B" stroke={out} strokeWidth="1.2" />
         </g>
       )}
-      {prop === 'bounce-badge' && (
-        <g transform="translate(70, 18)">
-          <g className="cat-bounce-badge">
-            <circle cx="0" cy="0" r="10" fill="#E7536E" stroke={out} strokeWidth="1.2" />
-            <path d="M -3 -2 L -1 4 L 5 -5" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </g>
+      {has('wizard') && (
+        <g>
+          <path d="M 50 2 L 30 32 L 70 32 Z" fill="#3C5878" stroke={out} strokeWidth="1.3" strokeLinejoin="round" />
+          <path d="M 26 32 Q 50 38, 74 32 L 73 35 Q 50 40, 27 35 Z" fill="#2E4660" stroke={out} strokeWidth="1.1" strokeLinejoin="round" />
+          <path d="M 49 15 L 50.2 18 L 53 19 L 50.2 20 L 49 23 L 47.8 20 L 45 19 L 47.8 18 Z" fill="#F5D155" />
+          <circle cx="44" cy="27" r="1" fill="#F5D155" />
+          <circle cx="56" cy="23" r="1.2" fill="#F6F1E8" />
         </g>
       )}
-      {prop === 'comet-tail' && (
-        <g className="cat-comet-tail">
-          <path d="M 17 18 C 32 11, 47 10, 62 15" fill="none" stroke="#8BA7B8" strokeWidth="2" strokeLinecap="round" strokeDasharray="5,4" opacity="0.55" />
-          <path d="M 70 16 L 72 21 L 77 23 L 72 25 L 70 30 L 68 25 L 63 23 L 68 21 Z" fill="#F5D155" stroke={out} strokeWidth="0.9" />
+
+      {/* === New face === */}
+      {has('monocle') && (
+        <g>
+          <circle cx="60" cy="52" r="6.5" fill="#C6D4E2" opacity="0.25" />
+          <circle cx="60" cy="52" r="6.5" fill="none" stroke={out} strokeWidth="1.6" />
+          <path d="M 60 58.5 Q 60 66, 56 70" stroke={out} strokeWidth="1" fill="none" />
+        </g>
+      )}
+      {has('eyepatch') && (
+        <g>
+          <path d="M 34 50 Q 50 36, 66 48" stroke={out} strokeWidth="1.4" fill="none" />
+          <ellipse cx="40" cy="52" rx="6" ry="7" fill="#2B2B2B" stroke={out} strokeWidth="1.2" />
+        </g>
+      )}
+
+      {/* === New neckwear === */}
+      {has('bowtie') && (
+        <g transform="translate(50, 76)">
+          <path d="M -2 0 L -12 -5 L -12 5 Z" fill="#E7536E" stroke={out} strokeWidth="1.1" strokeLinejoin="round" />
+          <path d="M 2 0 L 12 -5 L 12 5 Z" fill="#E7536E" stroke={out} strokeWidth="1.1" strokeLinejoin="round" />
+          <rect x="-2.5" y="-3" width="5" height="6" rx="1.5" fill="#C13F58" stroke={out} strokeWidth="1" />
+        </g>
+      )}
+      {has('necktie') && (
+        <g>
+          <path d="M 47 72 L 53 72 L 51 76 L 49 76 Z" fill="#3C5878" stroke={out} strokeWidth="0.9" strokeLinejoin="round" />
+          <path d="M 49 76 L 51 76 L 53 88 L 50 92 L 47 88 Z" fill="#3C5878" stroke={out} strokeWidth="0.9" strokeLinejoin="round" />
+        </g>
+      )}
+      {has('bandana') && (
+        <g>
+          <path d="M 32 74 Q 50 70, 68 74 L 62 78 Q 50 75, 38 78 Z" fill="#C97B5F" stroke={out} strokeWidth="1.1" strokeLinejoin="round" />
+          <path d="M 44 77 L 50 90 L 56 77 Z" fill="#C97B5F" stroke={out} strokeWidth="1.1" strokeLinejoin="round" />
+          <circle cx="43" cy="75" r="0.8" fill="#fff" opacity="0.6" />
+          <circle cx="57" cy="75" r="0.8" fill="#fff" opacity="0.6" />
+          <circle cx="50" cy="73.5" r="0.8" fill="#fff" opacity="0.6" />
+        </g>
+      )}
+
+      {/* === New held items === */}
+      {has('balloon') && (
+        <g>
+          <path d="M 80 38 Q 76 52, 72 64" stroke={out} strokeWidth="0.8" fill="none" />
+          <ellipse cx="80" cy="24" rx="9" ry="11" fill="#E7536E" stroke={out} strokeWidth="1.2" />
+          <path d="M 80 35 L 78 38 L 82 38 Z" fill="#E7536E" stroke={out} strokeWidth="1" />
+          <ellipse cx="77" cy="20" rx="2.4" ry="3.4" fill="#fff" opacity="0.4" />
+        </g>
+      )}
+      {has('boba') && (
+        <g transform="translate(74, 60)">
+          <path d="M -6 -7 L 6 -7 L 5 9 Q 5 11, 3 11 L -3 11 Q -5 11, -5 9 Z" fill="#EAD9C0" stroke={out} strokeWidth="1.1" strokeLinejoin="round" />
+          <rect x="-6.5" y="-9" width="13" height="3" rx="1" fill="#F6F1E8" stroke={out} strokeWidth="1" />
+          <line x1="2" y1="-14" x2="0" y2="8" stroke={out} strokeWidth="1.4" strokeLinecap="round" />
+          <circle cx="-2" cy="7" r="1.2" fill="#3A2A1A" />
+          <circle cx="1.6" cy="8" r="1.2" fill="#3A2A1A" />
+          <circle cx="-0.4" cy="4.5" r="1.2" fill="#3A2A1A" />
+        </g>
+      )}
+      {has('fish') && (
+        <g transform="translate(75, 64)">
+          <path d="M -6 0 Q 0 -6, 8 0 Q 0 6, -6 0 Z" fill="#8BA7B8" stroke={out} strokeWidth="1" strokeLinejoin="round" />
+          <path d="M -6 0 L -11 -4 L -11 4 Z" fill="#8BA7B8" stroke={out} strokeWidth="1" strokeLinejoin="round" />
+          <circle cx="4" cy="-1" r="1" fill={out} />
         </g>
       )}
     </svg>
@@ -4218,6 +4375,12 @@ const CatAvatar = ({ avatar, size = 64 }) => {
       stroke="#2B2B2B"
       eyeColor={eye}
       expression={a.expression || 'happy'}
+      pattern={a.pattern || 'solid'}
+      hat={a.hat || 'none'}
+      face={a.face || 'none'}
+      neck={a.neck || 'none'}
+      hand={a.hand || 'none'}
+      aura={a.aura || 'none'}
       prop={a.prop || 'none'}
     />
   );
@@ -4282,7 +4445,7 @@ const FileTag = ({ size = 22, color = '#2B2B2B' }) => (
 Object.assign(window, {
   CatBase, CatAvatar, CatApprove, CatWFH, CatASAP, CatSleepy,
   CursorArrow, PawPrint, Bean, Sparkle, Mug, Pouch, FileTag,
-  EXPRESSIONS, PROPS, BODY_COLORS, ACCENT_COLORS, EYE_COLORS,
+  EXPRESSIONS, PROPS, PATTERNS, SLOTS, BODY_COLORS, ACCENT_COLORS, EYE_COLORS,
 });
 
 </script>
@@ -4540,21 +4703,24 @@ function IdentityGate({ onClaim, onActivateCode }) {
   const [avatarSeed, setAvatarSeed] = _usC(0);
   const [codeInput, setCodeInput] = _usC('');
   const [codeError, setCodeError] = _usC(null);
+  const [outOfTeam, setOutOfTeam] = _usC(false);
+  const [lineId, setLineId] = _usC('');
 
   // Starter avatars — only CTRL+N-unlocked items so the chosen avatar is immediately valid.
   const avatarOptions = _umC(() => {
     const bodies = ['cream', 'beige', 'sand'];
     const accents = ['mustard', 'pink'];
-    const props = ['none', 'bow', 'collar'];
+    const necks = ['none', 'bow', 'collar'];
     const exps = ['happy', 'closed', 'sleepy'];
     const eyes = ['black', 'brown'];
     const arr = [];
     for (let i = 0; i < 4; i++) {
       const seed = (avatarSeed * 4 + i) * 7919;
       arr.push({
+        ...CTRLS.DEFAULT_AVATAR,
         body: bodies[seed % bodies.length],
         accent: accents[(seed * 3) % accents.length],
-        prop: props[(seed * 11) % props.length],
+        neck: necks[(seed * 11) % necks.length],
         expression: exps[(seed * 17) % exps.length],
         eyeColor: eyes[(seed * 23) % eyes.length],
       });
@@ -4564,7 +4730,7 @@ function IdentityGate({ onClaim, onActivateCode }) {
   const [pickedAvatar, setPickedAvatar] = _usC(0);
 
   function claim() {
-    onClaim(name.trim(), avatarOptions[pickedAvatar]);
+    onClaim(name.trim(), avatarOptions[pickedAvatar], { outOfTeam, lineId: outOfTeam ? lineId.trim() : '' });
   }
   function tryCode() {
     const c = codeInput.trim().toUpperCase().replace(/\s/g, '');
@@ -4612,9 +4778,34 @@ function IdentityGate({ onClaim, onActivateCode }) {
             value={name}
             autoFocus
             onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && name.trim()) claim(); }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && name.trim() && (!outOfTeam || lineId.trim())) claim(); }}
           />
-          <button className="btn-primary" disabled={!name.trim()} onClick={claim}>let's brew →</button>
+
+          <button
+            type="button"
+            className={`outteam-toggle ${outOfTeam ? 'on' : ''}`}
+            onClick={() => setOutOfTeam(!outOfTeam)}
+          >
+            <span className="outteam-check">{outOfTeam ? '☑' : '☐'}</span>
+            <span className="h-hand">ฉันเป็นคนนอกทีม / ออฟฟิศอื่น</span>
+          </button>
+          {outOfTeam && (
+            <div className="outteam-box">
+              <div className="mono dim" style={{ fontSize: 10, marginBottom: 4 }}>
+                คนนอกทีมมีค่ากาแฟ +฿20/แก้ว · ใส่ LINE ID ไว้เรียกเก็บเงินนะ ☕
+              </div>
+              <input
+                className="name-input"
+                style={{ marginTop: 0 }}
+                placeholder="LINE ID (เช่น pim_coffee)"
+                value={lineId}
+                onChange={(e) => setLineId(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && name.trim() && lineId.trim()) claim(); }}
+              />
+            </div>
+          )}
+
+          <button className="btn-primary" disabled={!name.trim() || (outOfTeam && !lineId.trim())} onClick={claim}>let's brew →</button>
         </div>
       )}
 
@@ -4896,6 +5087,98 @@ function DayPicker({ state, selectedDate, setSelectedDate, cart, profile }) {
 }
 
 // === Menu cards ===
+// === Café lounge — everyone with an order on the selected day, sitting together ===
+function CafeLounge({ state, selectedDate, profile }) {
+  const patrons = _umC(() => {
+    const byPerson = {};
+    (state.orders || []).forEach((o) => {
+      if (!CTRLS.isConfirmedOrder(o) || o.date !== selectedDate) return;
+      const key = o.profileId || o.name || 'someone';
+      if (!byPerson[key]) {
+        byPerson[key] = { key, name: o.name || 'someone', avatar: o.avatar, cups: 0, ts: o.ts || 0 };
+      }
+      byPerson[key].cups += (o.items || []).length;
+      // keep the most recent avatar
+      if ((o.ts || 0) >= byPerson[key].ts) { byPerson[key].avatar = o.avatar; byPerson[key].ts = o.ts || 0; }
+    });
+    return Object.values(byPerson).sort((a, b) => a.ts - b.ts);
+  }, [state.orders, selectedDate]);
+
+  if (!patrons.length) return null;
+  const sd = shortDate(selectedDate);
+  const isToday = selectedDate === CTRLS.isoToday();
+
+  return (
+    <div className="section cafe-section">
+      <div className="daypicker-head" style={{ marginBottom: 8 }}>
+        <span className="mono">☕ ·</span>
+        <span className="h-hand">{isToday ? "today's café" : `café · ${sd.dow} ${sd.day}`}</span>
+        <span className="mono dim" style={{ marginLeft: 'auto', fontSize: 10 }}>{patrons.length} seated</span>
+      </div>
+      <div className="cafe-floor">
+        {patrons.map((p) => {
+          const isMe = p.key === profile.id || p.name === profile.name;
+          return (
+            <div key={p.key} className={`cafe-seat ${isMe ? 'me' : ''}`} title={`${p.name} · ${p.cups} cup${p.cups !== 1 ? 's' : ''}`}>
+              <div className="cafe-name mono">{isMe ? 'you' : p.name}</div>
+              <CatAvatar avatar={p.avatar || { body: 'beige', expression: 'happy' }} size={52} />
+              <div className="cafe-cups mono dim">{'☕'.repeat(Math.min(p.cups, 3))}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="cafe-counter" />
+      <div className="mono dim cafe-hint">แต่งตัวแมวของคุณในโปรไฟล์ แล้วมานั่งโชว์กัน ✨</div>
+    </div>
+  );
+}
+
+// === "Miss a bean?" — vote to bring back retired/sold-out ASAP roasts ===
+function MissedBeans({ state, setState, profile }) {
+  const threshold = state.barista?.beanLoveThreshold || 8;
+  const beanLove = state.beanLove || {};
+  const missed = (state.asap || []).filter((a) => !CTRLS.isAvailable(a));
+  if (!missed.length) return null;
+
+  function toggleVote(id) {
+    setState((s) => {
+      const bl = { ...(s.beanLove || {}) };
+      const voters = new Set(bl[id] || []);
+      if (voters.has(profile.id)) voters.delete(profile.id); else voters.add(profile.id);
+      bl[id] = [...voters];
+      return { ...s, beanLove: bl };
+    });
+  }
+
+  return (
+    <div className="section missed-section">
+      <div className="daypicker-head" style={{ marginBottom: 2 }}>
+        <span className="mono dim">sold out · 💭 miss one?</span>
+      </div>
+      <div className="mono dim" style={{ fontSize: 10, marginBottom: 8 }}>
+        vote to bring a retired roast back — enough love and {state.barista?.name || 'the barista'} restocks it
+      </div>
+      {missed.map((a) => {
+        const voters = beanLove[a.id] || [];
+        const voted = voters.includes(profile.id);
+        const pct = Math.min(100, Math.round((voters.length / threshold) * 100));
+        return (
+          <div key={a.id} className="missed-bean">
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="h-hand missed-name" style={{ fontSize: 15 }}>{a.name} <span className="missed-tag mono">sold out</span></div>
+              <div className="missed-bar"><div className="missed-fill" style={{ width: pct + '%' }} /></div>
+              <div className="mono dim" style={{ fontSize: 10 }}>{voters.length}/{threshold} want it back{voters.length >= threshold ? ' · 🎉 restocking soon!' : ''}</div>
+            </div>
+            <button className={`btn-mini ${voted ? '' : 'ghost'}`} onClick={() => toggleVote(a.id)}>
+              {voted ? '💛 voted' : '🥺 bring back'}
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function MenuList({ state, isClosed, onAdd }) {
   const [showAsap, setShowAsap] = _usC(false);
   const [activeRoast, setActiveRoast] = _usC('all');
@@ -5505,6 +5788,8 @@ function CustomerPocket({ state, setState, profile, setProfile, openProfile }) {
           paid: 'confirmed',
           source: 'subscription',
           subId: sub.id,
+          outOfTeam: !!profile.outOfTeam,
+          lineId: profile.lineId || '',
           ts: Date.now() + i,
         });
       }
@@ -5540,6 +5825,8 @@ function CustomerPocket({ state, setState, profile, setProfile, openProfile }) {
       items,
       status: 'queued',
       paid: 'confirmed',
+      outOfTeam: !!profile.outOfTeam,
+      lineId: profile.lineId || '',
       ts: Date.now(),
     }));
     const cupsAdded = newOrders.reduce((s, o) => s + o.items.length, 0);
@@ -5614,6 +5901,7 @@ function CustomerPocket({ state, setState, profile, setProfile, openProfile }) {
       />
 
       <DayPicker state={state} selectedDate={selectedDate} setSelectedDate={setSelectedDate} cart={cart} profile={profile} />
+      <CafeLounge state={state} selectedDate={selectedDate} profile={profile} />
       {isClosed && (
         <div className="section" style={{ paddingTop: 0 }}>
           <div className="closed-banner">
@@ -5623,6 +5911,7 @@ function CustomerPocket({ state, setState, profile, setProfile, openProfile }) {
         </div>
       )}
       <MenuList state={state} isClosed={isClosed} onAdd={addItem} />
+      <MissedBeans state={state} setState={setState} profile={profile} />
 
       {hasTeammates && (
         <div className="section" style={{ paddingTop: 0 }}>
@@ -6299,13 +6588,13 @@ function RankGate({ unlockedAt, onPreview, children }) {
 }
 
 function AvatarTab({ profile, setProfile }) {
-  const a = profile.avatar || { ...CTRLS.DEFAULT_AVATAR };
+  const a = CTRLS.normalizeAvatar(profile.avatar);
   const unlocks = CTRLS.unlocksFor(profile.cupCount);
   const rank = CTRLS.rankFor(profile.cupCount);
   const nextRank = CTRLS.nextRank(profile.cupCount);
 
   const [preview, setPreview] = _usP(null); // { category, item, unlockedAt }
-  const timerRef = _usP(null); // useRef equivalent via useState(null) for timer
+  const timerRef = _urP(null);
 
   function startPreview(category, item, unlockedAt) {
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -6326,10 +6615,15 @@ function AvatarTab({ profile, setProfile }) {
     const rnd = (arr) => arr[Math.floor(Math.random() * arr.length)];
     patch({
       body: rnd(unlocks.body),
+      pattern: rnd(unlocks.pattern),
       accent: rnd(unlocks.accent),
       eyeColor: rnd(unlocks.eyeColor),
       expression: rnd(unlocks.expression),
-      prop: rnd(unlocks.prop),
+      hat: rnd(unlocks.hat),
+      face: rnd(unlocks.face),
+      neck: rnd(unlocks.neck),
+      hand: rnd(unlocks.hand),
+      aura: rnd(unlocks.aura),
     });
   }
 
@@ -6422,6 +6716,28 @@ function AvatarTab({ profile, setProfile }) {
       </div>
 
       <div className="avatar-section">
+        <label className="field-label">coat pattern</label>
+        <div className="avatar-grid">
+          {PATTERNS.map((p) => {
+            const locked = !unlocks.pattern.includes(p);
+            const tier = locked ? unlockedAtRank('pattern', p) : null;
+            if (locked) return (
+              <RankGate key={p} unlockedAt={tier} onPreview={() => startPreview('pattern', p, tier)}>
+                <CatBase size={48} fill="#EADFCB" stroke="#2B2B2B" expression="happy" accent="#D5A23B" pattern={p} />
+                <span className="lbl mono">{p}</span>
+              </RankGate>
+            );
+            return (
+              <button key={p} className={`avatar-cell ${a.pattern === p ? 'on' : ''}`} onClick={() => patch({ pattern: p })}>
+                <CatBase size={48} fill={bodyFill} accent={accentFill} eyeColor={eyeFill} stroke="#2B2B2B" expression="happy" pattern={p} />
+                <span className="lbl mono">{p === 'solid' ? 'plain' : p}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="avatar-section">
         <label className="field-label">ear & blush</label>
         <div className="avatar-swatch-row">
           {ACCENT_COLORS.map((c) => {
@@ -6463,27 +6779,30 @@ function AvatarTab({ profile, setProfile }) {
         </div>
       </div>
 
-      <div className="avatar-section">
-        <label className="field-label">prop</label>
-        <div className="avatar-grid">
-          {PROPS.map((p) => {
-            const locked = !unlocks.prop.includes(p);
-            const tier = locked ? unlockedAtRank('prop', p) : null;
-            if (locked) return (
-              <RankGate key={p} unlockedAt={tier} onPreview={() => startPreview('prop', p, tier)}>
-                <CatBase size={48} fill="#EADFCB" stroke="#2B2B2B" expression="happy" accent="#D5A23B" prop={p} />
-                <span className="lbl mono">{p}</span>
-              </RankGate>
-            );
-            return (
-              <button key={p} className={`avatar-cell ${a.prop === p ? 'on' : ''}`} onClick={() => patch({ prop: p })}>
-                <CatBase size={48} fill={bodyFill} accent={accentFill} stroke="#2B2B2B" expression="happy" prop={p} />
-                <span className="lbl mono">{p}</span>
-              </button>
-            );
-          })}
+      {SLOTS.map((slot) => (
+        <div className="avatar-section" key={slot.key}>
+          <label className="field-label">{slot.label}</label>
+          <div className="avatar-grid">
+            {slot.items.map((item) => {
+              const locked = item !== 'none' && !unlocks[slot.key].includes(item);
+              const tier = locked ? unlockedAtRank(slot.key, item) : null;
+              const previewProps = { [slot.key]: item };
+              if (locked) return (
+                <RankGate key={item} unlockedAt={tier} onPreview={() => startPreview(slot.key, item, tier)}>
+                  <CatBase size={48} fill="#EADFCB" stroke="#2B2B2B" expression="happy" accent="#D5A23B" {...previewProps} />
+                  <span className="lbl mono">{item}</span>
+                </RankGate>
+              );
+              return (
+                <button key={item} className={`avatar-cell ${(a[slot.key] || 'none') === item ? 'on' : ''}`} onClick={() => patch({ [slot.key]: item })}>
+                  <CatBase size={48} fill={bodyFill} accent={accentFill} eyeColor={eyeFill} stroke="#2B2B2B" expression="happy" pattern={a.pattern} {...previewProps} />
+                  <span className="lbl mono">{item === 'none' ? '∅' : item}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      ))}
     </div>
   );
 }
@@ -6925,7 +7244,10 @@ function QueueTab({ state, setState }) {
 
   const allDates = _umB(() => {
     const today = CTRLS.isoToday();
-    const fromOrders = state.orders.filter((o) => CTRLS.isConfirmedOrder(o)).map((o) => o.date);
+    // Only today and future — past dates are hard to scroll past and rarely needed.
+    const fromOrders = state.orders
+      .filter((o) => CTRLS.isConfirmedOrder(o) && o.date >= today)
+      .map((o) => o.date);
     return [...new Set([today, ...fromOrders])].sort();
   }, [state.orders]);
 
@@ -7010,6 +7332,11 @@ function QueueTab({ state, setState }) {
                     {o.source === 'gift' && <span style={{ color: 'var(--sage)' }}> · gift{o.gifterName ? ` from ${o.gifterName}` : ''}</span>}
                     {o.note ? <span style={{ color: 'var(--terracotta)' }}> · {o.note}</span> : null}
                   </div>
+                  {o.outOfTeam && (
+                    <div className="mono lineid-badge">
+                      นอกทีม +฿{CTRLS.outOfTeamSurcharge(state) * CTRLS.cupQty(o)}{o.lineId ? ` · LINE: ${o.lineId}` : ' · ไม่มี LINE ID'}
+                    </div>
+                  )}
                 </div>
                 <div className="mono dim" style={{ fontSize: 12 }}>฿{CTRLS.orderTotal(state, o)}</div>
                 <button
@@ -7171,12 +7498,10 @@ function SummaryTab({ state }) {
   if (orders.length === 0) lines.push(`  (none yet)`);
   orders.forEach((o) => {
     const items = o.items.map((it) => CTRLS.itemLabel(state, it)).join(', ');
-    const tag = o.source === 'gift' ? ` 🎁${o.gifterName ? ' from ' + o.gifterName : ''}` : o.source === 'subscription' ? ' 📌' : '';
+    const teamTag = o.outOfTeam ? ` · นอกทีม +฿${CTRLS.outOfTeamSurcharge(state) * CTRLS.cupQty(o)}${o.lineId ? ` (LINE: ${o.lineId})` : ''}` : '';
+    const tag = (o.source === 'gift' ? ` 🎁${o.gifterName ? ' from ' + o.gifterName : ''}` : o.source === 'subscription' ? ' 📌' : '') + teamTag;
     lines.push(`  • ${o.name}: ${items}${tag}`);
   });
-  lines.push('');
-  lines.push(`reply ✓ to confirm or ✗ + change`);
-
   const summaryText = lines.join('\n');
   async function copy() {
     if (await copyText(summaryText)) {
@@ -7765,10 +8090,11 @@ function PocketApp() {
       return CTRLS.upsertProfile(s, updatedProfile);
     });
   }
-  function claimNewProfile(name, avatar) {
+  function claimNewProfile(name, avatar, meta) {
     const existingCodes = Object.keys(state.profiles || {});
     const p = CTRLS.newProfile(name, existingCodes);
     if (avatar) p.avatar = avatar;
+    if (meta) { p.outOfTeam = !!meta.outOfTeam; p.lineId = meta.lineId || ''; }
     setState((s) => CTRLS.upsertProfile(s, p));
     CTRLS.setActiveCode(p.code);
     setTick((t) => t + 1);

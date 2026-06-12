@@ -9,21 +9,24 @@ function IdentityGate({ onClaim, onActivateCode }) {
   const [avatarSeed, setAvatarSeed] = _usC(0);
   const [codeInput, setCodeInput] = _usC('');
   const [codeError, setCodeError] = _usC(null);
+  const [outOfTeam, setOutOfTeam] = _usC(false);
+  const [lineId, setLineId] = _usC('');
 
   // Starter avatars — only CTRL+N-unlocked items so the chosen avatar is immediately valid.
   const avatarOptions = _umC(() => {
     const bodies = ['cream', 'beige', 'sand'];
     const accents = ['mustard', 'pink'];
-    const props = ['none', 'bow', 'collar'];
+    const necks = ['none', 'bow', 'collar'];
     const exps = ['happy', 'closed', 'sleepy'];
     const eyes = ['black', 'brown'];
     const arr = [];
     for (let i = 0; i < 4; i++) {
       const seed = (avatarSeed * 4 + i) * 7919;
       arr.push({
+        ...CTRLS.DEFAULT_AVATAR,
         body: bodies[seed % bodies.length],
         accent: accents[(seed * 3) % accents.length],
-        prop: props[(seed * 11) % props.length],
+        neck: necks[(seed * 11) % necks.length],
         expression: exps[(seed * 17) % exps.length],
         eyeColor: eyes[(seed * 23) % eyes.length],
       });
@@ -33,7 +36,7 @@ function IdentityGate({ onClaim, onActivateCode }) {
   const [pickedAvatar, setPickedAvatar] = _usC(0);
 
   function claim() {
-    onClaim(name.trim(), avatarOptions[pickedAvatar]);
+    onClaim(name.trim(), avatarOptions[pickedAvatar], { outOfTeam, lineId: outOfTeam ? lineId.trim() : '' });
   }
   function tryCode() {
     const c = codeInput.trim().toUpperCase().replace(/\s/g, '');
@@ -81,9 +84,34 @@ function IdentityGate({ onClaim, onActivateCode }) {
             value={name}
             autoFocus
             onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && name.trim()) claim(); }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && name.trim() && (!outOfTeam || lineId.trim())) claim(); }}
           />
-          <button className="btn-primary" disabled={!name.trim()} onClick={claim}>let's brew →</button>
+
+          <button
+            type="button"
+            className={`outteam-toggle ${outOfTeam ? 'on' : ''}`}
+            onClick={() => setOutOfTeam(!outOfTeam)}
+          >
+            <span className="outteam-check">{outOfTeam ? '☑' : '☐'}</span>
+            <span className="h-hand">ฉันเป็นคนนอกทีม / ออฟฟิศอื่น</span>
+          </button>
+          {outOfTeam && (
+            <div className="outteam-box">
+              <div className="mono dim" style={{ fontSize: 10, marginBottom: 4 }}>
+                คนนอกทีมมีค่ากาแฟ +฿20/แก้ว · ใส่ LINE ID ไว้เรียกเก็บเงินนะ ☕
+              </div>
+              <input
+                className="name-input"
+                style={{ marginTop: 0 }}
+                placeholder="LINE ID (เช่น pim_coffee)"
+                value={lineId}
+                onChange={(e) => setLineId(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && name.trim() && lineId.trim()) claim(); }}
+              />
+            </div>
+          )}
+
+          <button className="btn-primary" disabled={!name.trim() || (outOfTeam && !lineId.trim())} onClick={claim}>let's brew →</button>
         </div>
       )}
 
@@ -365,6 +393,98 @@ function DayPicker({ state, selectedDate, setSelectedDate, cart, profile }) {
 }
 
 // === Menu cards ===
+// === Café lounge — everyone with an order on the selected day, sitting together ===
+function CafeLounge({ state, selectedDate, profile }) {
+  const patrons = _umC(() => {
+    const byPerson = {};
+    (state.orders || []).forEach((o) => {
+      if (!CTRLS.isConfirmedOrder(o) || o.date !== selectedDate) return;
+      const key = o.profileId || o.name || 'someone';
+      if (!byPerson[key]) {
+        byPerson[key] = { key, name: o.name || 'someone', avatar: o.avatar, cups: 0, ts: o.ts || 0 };
+      }
+      byPerson[key].cups += (o.items || []).length;
+      // keep the most recent avatar
+      if ((o.ts || 0) >= byPerson[key].ts) { byPerson[key].avatar = o.avatar; byPerson[key].ts = o.ts || 0; }
+    });
+    return Object.values(byPerson).sort((a, b) => a.ts - b.ts);
+  }, [state.orders, selectedDate]);
+
+  if (!patrons.length) return null;
+  const sd = shortDate(selectedDate);
+  const isToday = selectedDate === CTRLS.isoToday();
+
+  return (
+    <div className="section cafe-section">
+      <div className="daypicker-head" style={{ marginBottom: 8 }}>
+        <span className="mono">☕ ·</span>
+        <span className="h-hand">{isToday ? "today's café" : `café · ${sd.dow} ${sd.day}`}</span>
+        <span className="mono dim" style={{ marginLeft: 'auto', fontSize: 10 }}>{patrons.length} seated</span>
+      </div>
+      <div className="cafe-floor">
+        {patrons.map((p) => {
+          const isMe = p.key === profile.id || p.name === profile.name;
+          return (
+            <div key={p.key} className={`cafe-seat ${isMe ? 'me' : ''}`} title={`${p.name} · ${p.cups} cup${p.cups !== 1 ? 's' : ''}`}>
+              <div className="cafe-name mono">{isMe ? 'you' : p.name}</div>
+              <CatAvatar avatar={p.avatar || { body: 'beige', expression: 'happy' }} size={52} />
+              <div className="cafe-cups mono dim">{'☕'.repeat(Math.min(p.cups, 3))}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="cafe-counter" />
+      <div className="mono dim cafe-hint">แต่งตัวแมวของคุณในโปรไฟล์ แล้วมานั่งโชว์กัน ✨</div>
+    </div>
+  );
+}
+
+// === "Miss a bean?" — vote to bring back retired/sold-out ASAP roasts ===
+function MissedBeans({ state, setState, profile }) {
+  const threshold = state.barista?.beanLoveThreshold || 8;
+  const beanLove = state.beanLove || {};
+  const missed = (state.asap || []).filter((a) => !CTRLS.isAvailable(a));
+  if (!missed.length) return null;
+
+  function toggleVote(id) {
+    setState((s) => {
+      const bl = { ...(s.beanLove || {}) };
+      const voters = new Set(bl[id] || []);
+      if (voters.has(profile.id)) voters.delete(profile.id); else voters.add(profile.id);
+      bl[id] = [...voters];
+      return { ...s, beanLove: bl };
+    });
+  }
+
+  return (
+    <div className="section missed-section">
+      <div className="daypicker-head" style={{ marginBottom: 2 }}>
+        <span className="mono dim">sold out · 💭 miss one?</span>
+      </div>
+      <div className="mono dim" style={{ fontSize: 10, marginBottom: 8 }}>
+        vote to bring a retired roast back — enough love and {state.barista?.name || 'the barista'} restocks it
+      </div>
+      {missed.map((a) => {
+        const voters = beanLove[a.id] || [];
+        const voted = voters.includes(profile.id);
+        const pct = Math.min(100, Math.round((voters.length / threshold) * 100));
+        return (
+          <div key={a.id} className="missed-bean">
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="h-hand missed-name" style={{ fontSize: 15 }}>{a.name} <span className="missed-tag mono">sold out</span></div>
+              <div className="missed-bar"><div className="missed-fill" style={{ width: pct + '%' }} /></div>
+              <div className="mono dim" style={{ fontSize: 10 }}>{voters.length}/{threshold} want it back{voters.length >= threshold ? ' · 🎉 restocking soon!' : ''}</div>
+            </div>
+            <button className={`btn-mini ${voted ? '' : 'ghost'}`} onClick={() => toggleVote(a.id)}>
+              {voted ? '💛 voted' : '🥺 bring back'}
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function MenuList({ state, isClosed, onAdd }) {
   const [showAsap, setShowAsap] = _usC(false);
   const [activeRoast, setActiveRoast] = _usC('all');
@@ -974,6 +1094,8 @@ function CustomerPocket({ state, setState, profile, setProfile, openProfile }) {
           paid: 'confirmed',
           source: 'subscription',
           subId: sub.id,
+          outOfTeam: !!profile.outOfTeam,
+          lineId: profile.lineId || '',
           ts: Date.now() + i,
         });
       }
@@ -1009,6 +1131,8 @@ function CustomerPocket({ state, setState, profile, setProfile, openProfile }) {
       items,
       status: 'queued',
       paid: 'confirmed',
+      outOfTeam: !!profile.outOfTeam,
+      lineId: profile.lineId || '',
       ts: Date.now(),
     }));
     const cupsAdded = newOrders.reduce((s, o) => s + o.items.length, 0);
@@ -1083,6 +1207,7 @@ function CustomerPocket({ state, setState, profile, setProfile, openProfile }) {
       />
 
       <DayPicker state={state} selectedDate={selectedDate} setSelectedDate={setSelectedDate} cart={cart} profile={profile} />
+      <CafeLounge state={state} selectedDate={selectedDate} profile={profile} />
       {isClosed && (
         <div className="section" style={{ paddingTop: 0 }}>
           <div className="closed-banner">
@@ -1092,6 +1217,7 @@ function CustomerPocket({ state, setState, profile, setProfile, openProfile }) {
         </div>
       )}
       <MenuList state={state} isClosed={isClosed} onAdd={addItem} />
+      <MissedBeans state={state} setState={setState} profile={profile} />
 
       {hasTeammates && (
         <div className="section" style={{ paddingTop: 0 }}>

@@ -1,0 +1,110 @@
+/* CTRL+S Coffee — shared brand tokens
+   Used across all 3 prototypes. */
+
+:root {
+  /* Palette */
+  --cream: #F6F1E8;
+  --beige: #EADFCB;
+  --beige-deep: #DDCDB1;
+  --mustard: #D5A23B;
+  --mustard-soft: #E8C879;
+  --pink: #E7A2AC;
+  --pink-soft: #F2C8CD;
+  --terracotta: #C7654E;
+  --terracotta-soft: #E29A85;
+  --sage: #8FA287;
+  --sage-soft: #B8C5B1;
+  --charcoal: #2B2B2B;
+  --charcoal-soft: #4A4A4A;
+  --brown: #6B4E3D;
+  --brown-light: #A88B72;
+  --paper: #FCF8F0;
+  --shadow: rgba(43, 43, 43, 0.08);
+  --line: rgba(107, 78, 61, 0.18);
+  --line-strong: rgba(107, 78, 61, 0.35);
+
+  /* Fonts */
+  --font-doodle: 'Caveat', 'Patrick Hand', cursive;
+  --font-hand: 'Patrick Hand', 'Caveat', cursive;
+  --font-body: 'Nunito', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+}
+
+/* Dark mode */
+[data-theme="dark"] {
+  --cream: #1F1B16;
+  --beige: #2A2620;
+  --beige-deep: #36302A;
+  --paper: #25211C;
+  --charcoal: #F4EFE5;
+  --charcoal-soft: #C8C0B0;
+  --brown: #D9B89A;
+  --brown-light: #B8967A;
+  --line: rgba(245, 240, 230, 0.14);
+  --line-strong: rgba(245, 240, 230, 0.3);
+  --shadow: rgba(0, 0, 0, 0.45);
+  --mustard: #E8B852;
+  --pink: #F0B6BE;
+  --terracotta: #DA7E66;
+  --sage: #A6BB9E;
+}
+
+/* Reset-ish */
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--font-body);
+  color: var(--charcoal);
+  background: var(--cream);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'ss01';
+}
+button { font: inherit; color: inherit; cursor: pointer; border: 0; background: 0; padding: 0; }
+input, textarea, select { font: inherit; color: inherit; }
+
+/* Hand-drawn / doodle utilities */
+.h-doodle { font-family: var(--font-doodle); font-weight: 700; line-height: 1.05; letter-spacing: 0.5px; }
+.h-hand { font-family: var(--font-hand); font-weight: 400; letter-spacing: 0.3px; }
+.mono { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; }
+
+/* Wobbly underline / borders */
+.doodle-border {
+  border: 1.5px solid var(--charcoal);
+  border-radius: 22px 18px 24px 16px / 16px 22px 18px 24px;
+}
+.doodle-pill {
+  border-radius: 999px;
+  border: 1.5px solid var(--charcoal);
+}
+
+/* Common cat SVG sprite refs use inline currentColor */
+.cat-svg { width: 100%; height: 100%; }
+
+/* Stripes used for image placeholders */
+.placeholder-stripe {
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--beige) 0,
+    var(--beige) 6px,
+    var(--beige-deep) 6px,
+    var(--beige-deep) 12px
+  );
+}
+
+/* Scroll polish */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Wobble on hover for cute buttons */
+@keyframes wobble {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-1.5deg); }
+  75% { transform: rotate(1.5deg); }
+}
+.wobble:hover { animation: wobble 0.4s ease-in-out; }
+
+/* Subtle paw bounce */
+@keyframes paw-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
