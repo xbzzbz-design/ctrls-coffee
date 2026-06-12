@@ -2961,27 +2961,27 @@ input, textarea, select { font: inherit; color: inherit; }
   margin-left: 4px;
 }
 
-/* === Out-of-team signup toggle === */
-.outteam-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  margin-top: 10px;
-  padding: 10px 12px;
-  border: 1.5px dashed var(--line);
+/* === Team question (signup) === */
+.team-ask { margin-top: 12px; }
+.team-pills { display: flex; gap: 8px; }
+.team-pill {
+  flex: 1;
+  padding: 9px 10px;
+  border: 1.5px solid var(--line);
   border-radius: 12px;
   background: transparent;
   cursor: pointer;
-  text-align: left;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
   color: var(--brown);
+  transition: all 0.15s;
 }
-.outteam-toggle.on {
-  border-style: solid;
-  border-color: var(--terracotta);
-  background: var(--terracotta-soft);
+.team-pill.on {
+  border-color: var(--mustard);
+  background: var(--mustard);
+  color: var(--cream);
+  font-weight: 600;
 }
-.outteam-check { font-size: 16px; flex-shrink: 0; }
 .outteam-box { margin-top: 8px; }
 
 /* === Out-of-team LINE ID badge (barista back-office) === */
@@ -2996,55 +2996,69 @@ input, textarea, select { font: inherit; color: inherit; }
   font-weight: 600;
 }
 
-/* === Café lounge — patrons with an order today, sitting together === */
+/* === Café lounge — cats strolling around the café === */
 .cafe-section { position: relative; }
-.cafe-floor {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px 10px;
-  padding: 14px 8px 18px;
-  background: linear-gradient(180deg, var(--beige-soft, #F3EADA) 0%, var(--cream, #F6F1E8) 100%);
-  border-radius: 16px 16px 0 0;
-  justify-content: center;
+.cafe-strip {
+  position: relative;
+  height: 72px;
+  overflow: hidden;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #F3EADA 0%, #EDE2CE 100%);
 }
-.cafe-seat {
+.cafe-lane {
+  position: absolute;
+  inset: 0;
+  bottom: 10px;
+}
+.cafe-floorline {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 10px;
+  background: repeating-linear-gradient(90deg, #C9A877 0 12px, #BE9B69 12px 24px);
+  box-shadow: inset 0 2px 3px rgba(0,0,0,0.1);
+}
+.cafe-walker {
+  position: absolute;
+  bottom: 4px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 64px;
-  animation: cafe-pop 0.4s cubic-bezier(0.34,1.56,0.64,1) both;
+  will-change: transform;
 }
-@keyframes cafe-pop {
-  from { transform: translateY(8px) scale(0.8); opacity: 0; }
-  to   { transform: translateY(0) scale(1); opacity: 1; }
+.cafe-walker.rtl { animation: cafe-walk-rtl 9s linear infinite; }
+.cafe-walker.ltr { animation: cafe-walk-ltr 9s linear infinite; }
+@keyframes cafe-walk-rtl {
+  from { transform: translateX(calc(100vw)); }
+  to   { transform: translateX(-72px); }
 }
+@keyframes cafe-walk-ltr {
+  from { transform: translateX(-72px); }
+  to   { transform: translateX(calc(100vw)); }
+}
+/* face the walking direction */
+.cafe-walker.ltr :is(svg) { transform: scaleX(-1); }
+.cafe-walker.me :is(svg) { animation: cafe-bob 0.6s ease-in-out infinite alternate; }
+@keyframes cafe-bob { from { translate: 0 0; } to { translate: 0 -2px; } }
 .cafe-name {
-  font-size: 10px;
-  max-width: 64px;
+  font-size: 9px;
+  max-width: 60px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
   color: var(--brown);
   font-weight: 600;
 }
-.cafe-seat.me .cafe-name {
+.cafe-walker.me .cafe-name {
   background: var(--mustard);
   color: var(--cream);
   border-radius: 999px;
-  padding: 1px 8px;
-}
-.cafe-cups { font-size: 9px; margin-top: 1px; letter-spacing: -2px; }
-.cafe-counter {
-  height: 12px;
-  background: repeating-linear-gradient(90deg, #C9A877 0 14px, #BE9B69 14px 28px);
-  border-radius: 0 0 6px 6px;
-  box-shadow: inset 0 2px 3px rgba(0,0,0,0.12);
+  padding: 0 6px;
 }
 .cafe-hint {
   font-size: 10px;
   text-align: center;
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 
@@ -4781,23 +4795,27 @@ function IdentityGate({ onClaim, onActivateCode }) {
             onKeyDown={(e) => { if (e.key === 'Enter' && name.trim() && (!outOfTeam || lineId.trim())) claim(); }}
           />
 
-          <button
-            type="button"
-            className={`outteam-toggle ${outOfTeam ? 'on' : ''}`}
-            onClick={() => setOutOfTeam(!outOfTeam)}
-          >
-            <span className="outteam-check">{outOfTeam ? '☑' : '☐'}</span>
-            <span className="h-hand">ฉันเป็นคนนอกทีม / ออฟฟิศอื่น</span>
-          </button>
+          <div className="team-ask">
+            <div className="h-hand" style={{ fontSize: 13, marginBottom: 6 }}>อยู่ในทีมครีเอทีฟไหม?</div>
+            <div className="team-pills">
+              <button
+                type="button"
+                className={`team-pill ${!outOfTeam ? 'on' : ''}`}
+                onClick={() => setOutOfTeam(false)}
+              >ใช่ อยู่ในทีม</button>
+              <button
+                type="button"
+                className={`team-pill ${outOfTeam ? 'on' : ''}`}
+                onClick={() => setOutOfTeam(true)}
+              >มาจากทีม/ออฟฟิศอื่น</button>
+            </div>
+          </div>
           {outOfTeam && (
             <div className="outteam-box">
-              <div className="mono dim" style={{ fontSize: 10, marginBottom: 4 }}>
-                คนนอกทีมมีค่ากาแฟ +฿20/แก้ว · ใส่ LINE ID ไว้เรียกเก็บเงินนะ ☕
-              </div>
               <input
                 className="name-input"
                 style={{ marginTop: 0 }}
-                placeholder="LINE ID (เช่น pim_coffee)"
+                placeholder="LINE ID (ไว้ส่งบิลให้นะ ☕)"
                 value={lineId}
                 onChange={(e) => setLineId(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && name.trim() && lineId.trim()) claim(); }}
@@ -5105,30 +5123,35 @@ function CafeLounge({ state, selectedDate, profile }) {
   }, [state.orders, selectedDate]);
 
   if (!patrons.length) return null;
-  const sd = shortDate(selectedDate);
   const isToday = selectedDate === CTRLS.isoToday();
 
   return (
     <div className="section cafe-section">
-      <div className="daypicker-head" style={{ marginBottom: 8 }}>
-        <span className="mono">☕ ·</span>
-        <span className="h-hand">{isToday ? "today's café" : `café · ${sd.dow} ${sd.day}`}</span>
-        <span className="mono dim" style={{ marginLeft: 'auto', fontSize: 10 }}>{patrons.length} seated</span>
+      <div className="cafe-strip">
+        <div className="cafe-lane">
+          {patrons.map((p, i) => {
+            const isMe = p.key === profile.id || p.name === profile.name;
+            // alternate walking direction + stagger so the lane feels alive
+            const dir = i % 2 === 0 ? 'rtl' : 'ltr';
+            const delay = -(i * 1.7) % 9;
+            return (
+              <div
+                key={p.key}
+                className={`cafe-walker ${dir} ${isMe ? 'me' : ''}`}
+                style={{ animationDelay: `${delay}s` }}
+                title={`${p.name} · ${p.cups} cup${p.cups !== 1 ? 's' : ''}`}
+              >
+                <span className="cafe-name mono">{isMe ? 'you' : p.name}</span>
+                <CatAvatar avatar={p.avatar || { body: 'beige', expression: 'happy' }} size={34} />
+              </div>
+            );
+          })}
+        </div>
+        <div className="cafe-floorline" />
       </div>
-      <div className="cafe-floor">
-        {patrons.map((p) => {
-          const isMe = p.key === profile.id || p.name === profile.name;
-          return (
-            <div key={p.key} className={`cafe-seat ${isMe ? 'me' : ''}`} title={`${p.name} · ${p.cups} cup${p.cups !== 1 ? 's' : ''}`}>
-              <div className="cafe-name mono">{isMe ? 'you' : p.name}</div>
-              <CatAvatar avatar={p.avatar || { body: 'beige', expression: 'happy' }} size={52} />
-              <div className="cafe-cups mono dim">{'☕'.repeat(Math.min(p.cups, 3))}</div>
-            </div>
-          );
-        })}
+      <div className="mono dim cafe-hint">
+        {isToday ? `${patrons.length} ตัวกำลังเดินเล่นในคาเฟ่` : `${patrons.length} ตัววันนั้น`} · แต่งแมวในโปรไฟล์มาเดินด้วยกัน ✨
       </div>
-      <div className="cafe-counter" />
-      <div className="mono dim cafe-hint">แต่งตัวแมวของคุณในโปรไฟล์ แล้วมานั่งโชว์กัน ✨</div>
     </div>
   );
 }

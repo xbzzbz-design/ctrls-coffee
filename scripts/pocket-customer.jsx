@@ -87,23 +87,27 @@ function IdentityGate({ onClaim, onActivateCode }) {
             onKeyDown={(e) => { if (e.key === 'Enter' && name.trim() && (!outOfTeam || lineId.trim())) claim(); }}
           />
 
-          <button
-            type="button"
-            className={`outteam-toggle ${outOfTeam ? 'on' : ''}`}
-            onClick={() => setOutOfTeam(!outOfTeam)}
-          >
-            <span className="outteam-check">{outOfTeam ? '☑' : '☐'}</span>
-            <span className="h-hand">ฉันเป็นคนนอกทีม / ออฟฟิศอื่น</span>
-          </button>
+          <div className="team-ask">
+            <div className="h-hand" style={{ fontSize: 13, marginBottom: 6 }}>อยู่ในทีมครีเอทีฟไหม?</div>
+            <div className="team-pills">
+              <button
+                type="button"
+                className={`team-pill ${!outOfTeam ? 'on' : ''}`}
+                onClick={() => setOutOfTeam(false)}
+              >ใช่ อยู่ในทีม</button>
+              <button
+                type="button"
+                className={`team-pill ${outOfTeam ? 'on' : ''}`}
+                onClick={() => setOutOfTeam(true)}
+              >มาจากทีม/ออฟฟิศอื่น</button>
+            </div>
+          </div>
           {outOfTeam && (
             <div className="outteam-box">
-              <div className="mono dim" style={{ fontSize: 10, marginBottom: 4 }}>
-                คนนอกทีมมีค่ากาแฟ +฿20/แก้ว · ใส่ LINE ID ไว้เรียกเก็บเงินนะ ☕
-              </div>
               <input
                 className="name-input"
                 style={{ marginTop: 0 }}
-                placeholder="LINE ID (เช่น pim_coffee)"
+                placeholder="LINE ID (ไว้ส่งบิลให้นะ ☕)"
                 value={lineId}
                 onChange={(e) => setLineId(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && name.trim() && lineId.trim()) claim(); }}
@@ -411,30 +415,35 @@ function CafeLounge({ state, selectedDate, profile }) {
   }, [state.orders, selectedDate]);
 
   if (!patrons.length) return null;
-  const sd = shortDate(selectedDate);
   const isToday = selectedDate === CTRLS.isoToday();
 
   return (
     <div className="section cafe-section">
-      <div className="daypicker-head" style={{ marginBottom: 8 }}>
-        <span className="mono">☕ ·</span>
-        <span className="h-hand">{isToday ? "today's café" : `café · ${sd.dow} ${sd.day}`}</span>
-        <span className="mono dim" style={{ marginLeft: 'auto', fontSize: 10 }}>{patrons.length} seated</span>
+      <div className="cafe-strip">
+        <div className="cafe-lane">
+          {patrons.map((p, i) => {
+            const isMe = p.key === profile.id || p.name === profile.name;
+            // alternate walking direction + stagger so the lane feels alive
+            const dir = i % 2 === 0 ? 'rtl' : 'ltr';
+            const delay = -(i * 1.7) % 9;
+            return (
+              <div
+                key={p.key}
+                className={`cafe-walker ${dir} ${isMe ? 'me' : ''}`}
+                style={{ animationDelay: `${delay}s` }}
+                title={`${p.name} · ${p.cups} cup${p.cups !== 1 ? 's' : ''}`}
+              >
+                <span className="cafe-name mono">{isMe ? 'you' : p.name}</span>
+                <CatAvatar avatar={p.avatar || { body: 'beige', expression: 'happy' }} size={34} />
+              </div>
+            );
+          })}
+        </div>
+        <div className="cafe-floorline" />
       </div>
-      <div className="cafe-floor">
-        {patrons.map((p) => {
-          const isMe = p.key === profile.id || p.name === profile.name;
-          return (
-            <div key={p.key} className={`cafe-seat ${isMe ? 'me' : ''}`} title={`${p.name} · ${p.cups} cup${p.cups !== 1 ? 's' : ''}`}>
-              <div className="cafe-name mono">{isMe ? 'you' : p.name}</div>
-              <CatAvatar avatar={p.avatar || { body: 'beige', expression: 'happy' }} size={52} />
-              <div className="cafe-cups mono dim">{'☕'.repeat(Math.min(p.cups, 3))}</div>
-            </div>
-          );
-        })}
+      <div className="mono dim cafe-hint">
+        {isToday ? `${patrons.length} ตัวกำลังเดินเล่นในคาเฟ่` : `${patrons.length} ตัววันนั้น`} · แต่งแมวในโปรไฟล์มาเดินด้วยกัน ✨
       </div>
-      <div className="cafe-counter" />
-      <div className="mono dim cafe-hint">แต่งตัวแมวของคุณในโปรไฟล์ แล้วมานั่งโชว์กัน ✨</div>
     </div>
   );
 }
