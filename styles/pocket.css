@@ -1845,12 +1845,13 @@
 }
 .avatar-preview {
   background: var(--mustard-soft);
-  border-radius: 16px;
-  padding: 10px 14px;
+  border-radius: 14px;
+  padding: 7px 12px;
   border: 1.5px solid var(--mustard);
   position: sticky;
-  top: 0;
+  top: 4px;
   z-index: 20;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.06);
 }
 .avatar-preview-inner {
   display: flex;
@@ -2872,22 +2873,54 @@
 .cafe-section { position: relative; }
 .cafe-strip {
   position: relative;
-  height: 72px;
+  height: 84px;
   overflow: hidden;
   border-radius: 14px;
-  background: linear-gradient(180deg, #F3EADA 0%, #EDE2CE 100%);
+  /* café interior: warm wall + soft window light */
+  background:
+    radial-gradient(120px 60px at 18% 24%, rgba(255,250,235,0.7), transparent 70%),
+    radial-gradient(120px 60px at 78% 20%, rgba(255,250,235,0.55), transparent 70%),
+    linear-gradient(180deg, #E8D6BC 0%, #E2CBA8 55%, #D8BD96 100%);
+}
+/* back wall decor: windows + hanging menu board (pure CSS, behind cats) */
+.cafe-strip::before {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; top: 8px; height: 34px;
+  background:
+    /* two windows */
+    linear-gradient(#BFE0E8, #BFE0E8) 12% 0/40px 26px no-repeat,
+    linear-gradient(#BFE0E8, #BFE0E8) 70% 0/40px 26px no-repeat;
+  opacity: 0.7;
+  border-radius: 4px;
+}
+.cafe-strip::after {
+  content: "☕ MENU";
+  position: absolute;
+  top: 7px; left: 50%; transform: translateX(-50%);
+  font-family: var(--font-mono, monospace);
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: #6B5540;
+  background: #C9A877;
+  padding: 2px 8px;
+  border-radius: 3px;
+  box-shadow: 0 2px 0 #A8865A, 0 6px 4px rgba(0,0,0,0.12);
 }
 .cafe-lane {
   position: absolute;
   inset: 0;
-  bottom: 10px;
+  bottom: 12px;
+  z-index: 2;
 }
 .cafe-floorline {
   position: absolute;
   left: 0; right: 0; bottom: 0;
-  height: 10px;
-  background: repeating-linear-gradient(90deg, #C9A877 0 12px, #BE9B69 12px 24px);
-  box-shadow: inset 0 2px 3px rgba(0,0,0,0.1);
+  height: 12px;
+  z-index: 1;
+  background:
+    repeating-linear-gradient(90deg, #B98E5E 0 16px, #AD8253 16px 32px);
+  box-shadow: inset 0 3px 4px rgba(0,0,0,0.15);
 }
 .cafe-walker {
   position: absolute;
@@ -2897,20 +2930,35 @@
   align-items: center;
   will-change: transform;
 }
-.cafe-walker.rtl { animation: cafe-walk-rtl 9s linear infinite; }
-.cafe-walker.ltr { animation: cafe-walk-ltr 9s linear infinite; }
+.cafe-walker.rtl { animation: cafe-walk-rtl 11s linear infinite; }
+.cafe-walker.ltr { animation: cafe-walk-ltr 11s linear infinite; }
 @keyframes cafe-walk-rtl {
-  from { transform: translateX(calc(100vw)); }
+  from { transform: translateX(100vw); }
   to   { transform: translateX(-72px); }
 }
 @keyframes cafe-walk-ltr {
   from { transform: translateX(-72px); }
-  to   { transform: translateX(calc(100vw)); }
+  to   { transform: translateX(100vw); }
 }
 /* face the walking direction */
-.cafe-walker.ltr :is(svg) { transform: scaleX(-1); }
-.cafe-walker.me :is(svg) { animation: cafe-bob 0.6s ease-in-out infinite alternate; }
-@keyframes cafe-bob { from { translate: 0 0; } to { translate: 0 -2px; } }
+.cafe-walker.ltr .cat-bob { transform: scaleX(-1); }
+/* every cat bobs + waddles while walking — cute stroll */
+.cafe-walker .cat-bob {
+  display: inline-block;
+  animation: cafe-waddle 0.5s ease-in-out infinite;
+  transform-origin: 50% 90%;
+}
+.cafe-walker.ltr .cat-bob { animation-name: cafe-waddle-flip; }
+@keyframes cafe-waddle {
+  0%   { transform: translateY(0) rotate(-4deg); }
+  50%  { transform: translateY(-3px) rotate(4deg); }
+  100% { transform: translateY(0) rotate(-4deg); }
+}
+@keyframes cafe-waddle-flip {
+  0%   { transform: scaleX(-1) translateY(0) rotate(-4deg); }
+  50%  { transform: scaleX(-1) translateY(-3px) rotate(4deg); }
+  100% { transform: scaleX(-1) translateY(0) rotate(-4deg); }
+}
 .cafe-name {
   font-size: 9px;
   max-width: 60px;
@@ -2918,7 +2966,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   margin-bottom: 1px;
-  color: var(--brown);
+  color: #5A4632;
   font-weight: 600;
 }
 .cafe-walker.me .cafe-name {

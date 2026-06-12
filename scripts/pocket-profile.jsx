@@ -1,6 +1,6 @@
 // CTRL+S Pocket — profile sheet: history, edit-order, avatar, share, subscription, settings.
 
-const { useState: _usP, useEffect: _ueP, useMemo: _umP } = React;
+const { useState: _usP, useEffect: _ueP, useMemo: _umP, useRef: _urP } = React;
 
 // === Profile sheet (root) ===
 function ProfileSheet({ state, setState, profile, setProfile, onClose, onLogout }) {
@@ -643,7 +643,7 @@ function AvatarTab({ profile, setProfile }) {
       <div className="avatar-preview">
         <div className="avatar-preview-inner">
           <div className="rank-avatar-wrap" style={{ position: 'relative', flexShrink: 0 }}>
-            <CatAvatar avatar={displayAvatar} size={72} />
+            <CatAvatar avatar={displayAvatar} size={52} />
             {rank.badge === 'ring' && <div className="rank-ring" />}
             {rank.badge === 'crown' && <div className="rank-crown">✦</div>}
             {preview && (

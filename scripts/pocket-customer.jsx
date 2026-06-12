@@ -434,7 +434,7 @@ function CafeLounge({ state, selectedDate, profile }) {
                 title={`${p.name} · ${p.cups} cup${p.cups !== 1 ? 's' : ''}`}
               >
                 <span className="cafe-name mono">{isMe ? 'you' : p.name}</span>
-                <CatAvatar avatar={p.avatar || { body: 'beige', expression: 'happy' }} size={34} />
+                <span className="cat-bob"><CatAvatar avatar={p.avatar || { body: 'beige', expression: 'happy' }} size={34} /></span>
               </div>
             );
           })}
