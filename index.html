@@ -370,10 +370,11 @@ input, textarea, select { font: inherit; color: inherit; }
 .mood-grid .mood-name { font-size: 20px; }
 .mood-grid .mood-tag { font-size: 9px; }
 .mood-grid .mood-meta { margin: 2px 0 0; }
-/* row 2: flavor description on its own line, price tucked at the end */
-.mood-grid .mood-foot { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-.mood-grid .mood-tagline { flex: 1; min-width: 0; font-size: 12px; line-height: 1.3; margin: 0; }
-.mood-grid .mood-cta { flex-direction: row; align-items: center; gap: 5px; flex-shrink: 0; }
+/* row 2: flavor description full-width, then price on its own line (right) —
+   stacked so a long tagline never leaves an awkward empty gap on the right */
+.mood-grid .mood-foot { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+.mood-grid .mood-tagline { width: 100%; font-size: 12px; line-height: 1.3; margin: 0; }
+.mood-grid .mood-cta { flex-direction: row; justify-content: flex-end; align-items: center; gap: 5px; }
 .mood-grid .mood-price { font-size: 18px; }
 .mood-grid .mood-emoji { font-size: 16px; }
 
