@@ -190,8 +190,34 @@ function WelcomeStrip({ profile, state, onOpenProfile }) {
 }
 
 // === Subscription strip on main view ===
-function SubscriptionStrip({ state, profile, onOpen, onCreate }) {
+function SubscriptionStrip({ state, profile, onOpen, onCreate, compact }) {
   const mySubs = (state.subscriptions || []).filter((s) => s.profileId === profile.id && s.active);
+  // compact = a small chip that sits beside the profile button in the header
+  if (compact) {
+    if (mySubs.length === 0) {
+      return (
+        <button className="sub-chip" onClick={onCreate} title="start a subscription">
+          <span className="sub-chip-ico">✨</span>
+          <span className="sub-chip-meta">
+            <span className="h-hand sub-chip-title">subscribe?</span>
+            <span className="mono sub-chip-sub">auto-brew your usual every week</span>
+          </span>
+          <span className="sub-chip-end">＋</span>
+        </button>
+      );
+    }
+    const sub = mySubs[0];
+    const extra = mySubs.length - 1;
+    return (
+      <button className="sub-chip active" onClick={onOpen} title="edit subscription">
+        <span className="sub-chip-ico">📌</span>
+        <span className="sub-chip-meta">
+          <span className="h-hand sub-chip-title">{sub.name || 'weekly'}{extra > 0 ? ` +${extra}` : ''}</span>
+          <span className="mono sub-chip-sub">your auto-brew · tap to edit</span>
+        </span>
+      </button>
+    );
+  }
   if (mySubs.length === 0) {
     return (
       <div className="section sub-strip-empty">
@@ -563,28 +589,34 @@ function MenuList({ state, isClosed, onAdd }) {
         );
       })()}
 
+      <div className="mood-grid">
       {(state.signatureMenu || CTRLS.DEFAULT_SIGNATURE_MENU).filter((m) => CTRLS.isAvailable(m)).map((m) => (
         <button key={m.id} disabled={isClosed} className="mood-card" style={{ '--accent': COLOR_TO_VAR[m.color] || COLOR_TO_VAR.mustard }} onClick={(e) => addAndFly(e, 'menu', m.id, m.color)}>
-          <div className="mood-cat">
-            <CatBase size={64}
-              fill={bodyForColor[m.color] || '#F6F1E8'}
-              stroke="#2B2B2B"
-              expression={m.catStyle || 'happy'}
-              accent={accentForColor[m.color] || '#D5A23B'}
-            />
+          <div className="mood-head">
+            <div className="mood-cat">
+              <CatBase size={64}
+                fill={bodyForColor[m.color] || '#F6F1E8'}
+                stroke="#2B2B2B"
+                expression={m.catStyle || 'happy'}
+                accent={accentForColor[m.color] || '#D5A23B'}
+              />
+            </div>
+            <div className="mood-text">
+              <div className="mood-name h-doodle">{m.name}</div>
+              <div className="mood-tag mono">{m.tag}</div>
+              <div className="mood-meta"><span className={`roast-pill ${CTRLS.itemRoast(m)}`}>{CTRLS.itemRoast(m)}</span></div>
+            </div>
           </div>
-          <div className="mood-text">
-            <div className="mood-name h-doodle">{m.name}</div>
-            <div className="mood-tag mono">{m.tag}</div>
-            <div className="mood-meta"><span className={`roast-pill ${CTRLS.itemRoast(m)}`}>{CTRLS.itemRoast(m)}</span></div>
+          <div className="mood-foot">
             <div className="mood-tagline h-hand">{m.tagline}</div>
-          </div>
-          <div className="mood-cta">
-            <div className="mood-price h-doodle">฿{m.price}</div>
-            <div className="mood-emoji">{m.mood}</div>
+            <div className="mood-cta">
+              <div className="mood-price h-doodle">฿{m.price}</div>
+              <div className="mood-emoji">{m.mood}</div>
+            </div>
           </div>
         </button>
       ))}
+      </div>
 
       <button disabled={isClosed} className="mood-card asap" onClick={() => setShowAsap(!showAsap)}>
         <div className="mood-cat"><CatASAP size={64} /></div>
@@ -1177,31 +1209,32 @@ function CustomerPocket({ state, setState, profile, setProfile, openProfile }) {
 
   return (
     <div className="customer-scroll no-scrollbar order-compact">
-      {/* compact header — profile + today's note */}
+      {/* compact header — profile + subscription chip share one row */}
       <div className="order-header">
         <button className="order-profile-btn" onClick={openProfile} title="profile">
-          <CatAvatar avatar={profile.avatar} size={40} />
+          <CatAvatar avatar={profile.avatar} size={38} />
           <span className="order-profile-meta">
             <span className="h-hand order-profile-name">{profile.name}</span>
             <span className="mono order-profile-rank">{CTRLS.rankFor(profile.cupCount).label}</span>
           </span>
         </button>
-        <div className="order-header-note"><TodayNoteCard state={state} /></div>
+        <SubscriptionStrip
+          compact
+          state={state}
+          profile={profile}
+          onOpen={() => setSubSheet('list')}
+          onCreate={() => setSubSheet('new')}
+        />
       </div>
 
+      <TodayNoteCard state={state} />
       <DayPicker state={state} selectedDate={selectedDate} setSelectedDate={setSelectedDate} cart={cart} profile={profile} />
 
-      {/* one-screen order grid: café+sub on one half, menu on the other
+      {/* one-screen order grid: café on one half, menu on the other
           (stacked top/bottom on phones, side-by-side left/right on wide screens) */}
       <div className="order-grid">
         <div className="order-aside">
           <CafeLounge state={state} selectedDate={selectedDate} profile={profile} />
-          <SubscriptionStrip
-            state={state}
-            profile={profile}
-            onOpen={() => setSubSheet('list')}
-            onCreate={() => setSubSheet('new')}
-          />
         </div>
         <div className="order-menu">
           {isClosed && (
