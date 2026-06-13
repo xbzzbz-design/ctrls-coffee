@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-title" content="CTRL+S ☕" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Patrick+Hand&family=Nunito:wght@400;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Patrick+Hand&family=Nunito:wght@400;600;700&family=JetBrains+Mono:wght@500;600&family=Itim&family=Noto+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
 /* CTRL+S Coffee — shared brand tokens
    Used across all 3 prototypes. */
@@ -41,10 +41,10 @@
   --line-strong: rgba(107, 78, 61, 0.35);
 
   /* Fonts */
-  --font-doodle: 'Caveat', 'Patrick Hand', cursive;
-  --font-hand: 'Patrick Hand', 'Caveat', cursive;
-  --font-body: 'Nunito', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+  --font-doodle: 'Caveat', 'Itim', 'Patrick Hand', cursive;
+  --font-hand: 'Patrick Hand', 'Itim', 'Caveat', cursive;
+  --font-body: 'Nunito', 'Noto Sans Thai', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Noto Sans Thai', 'Courier New', monospace;
 }
 
 /* Dark mode */
@@ -469,6 +469,67 @@ input, textarea, select { font: inherit; color: inherit; }
 .floating-cart .h-doodle { color: var(--cream); white-space: nowrap; }
 .floating-cart .mono { margin-left: auto; opacity: 0.8; font-size: 12px; }
 .cart-arrow { margin-left: 4px; font-size: 18px; }
+
+/* === Compact one-screen order layout === */
+.order-compact { padding-bottom: 92px; }
+
+.order-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 18px 4px;
+}
+.order-profile-btn {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--paper);
+  border: 1.5px solid rgba(90, 70, 50, 0.12);
+  border-radius: 999px;
+  padding: 4px 14px 4px 4px;
+  cursor: pointer; flex-shrink: 0;
+}
+.order-profile-btn:hover { transform: translateY(-1px); }
+.order-profile-meta { display: flex; flex-direction: column; line-height: 1.05; text-align: left; }
+.order-profile-name { font-size: 15px; color: var(--charcoal); }
+.order-profile-rank { font-size: 9px; color: var(--brown-light); text-transform: uppercase; }
+.order-header-note { flex: 1; min-width: 0; }
+.order-header-note .today-note-section { padding: 0; }
+
+/* phone default: café+sub stacked above the menu (top / bottom halves) */
+.order-grid { display: block; }
+.order-aside .section,
+.order-menu .section { padding-top: 8px; }
+.order-menu .closed-banner { margin: 0 18px 8px; }
+
+/* sticky bottom order bar — merged cart + confirm (≈2 taps to order) */
+.order-bar {
+  position: fixed; bottom: 14px; left: 16px; right: 16px;
+  z-index: 40;
+  background: var(--charcoal); color: var(--cream);
+  padding: 11px 16px; border-radius: 999px;
+  display: flex; align-items: center; gap: 10px;
+  box-shadow: 0 8px 20px rgba(43, 43, 43, 0.3);
+  transition: transform .15s; white-space: nowrap;
+  border: none; cursor: pointer;
+}
+.order-bar:hover { transform: translateY(-2px); }
+.order-bar .order-bar-cups { color: var(--cream); }
+.order-bar-total { margin-left: auto; opacity: 0.85; font-size: 13px; }
+.order-bar-cta {
+  background: var(--mustard); color: var(--charcoal);
+  padding: 4px 13px; border-radius: 999px; font-size: 14px;
+}
+
+/* wide screens: café+sub and menu sit side by side (left / right) */
+@media (min-width: 560px) {
+  .order-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    gap: 6px; align-items: start;
+  }
+  .order-bar {
+    left: 50%; right: auto; transform: translateX(-50%);
+    width: calc(100% - 32px); max-width: 520px;
+  }
+  .order-bar:hover { transform: translateX(-50%) translateY(-2px); }
+}
 
 /* === Sheets === */
 .sheet-backdrop {
@@ -3060,6 +3121,19 @@ input, textarea, select { font: inherit; color: inherit; }
 }
 .cafe-walker.rtl { animation: cafe-walk-rtl 11s linear infinite; }
 .cafe-walker.ltr { animation: cafe-walk-ltr 11s linear infinite; }
+/* "you" stand by the counter instead of strolling */
+.cafe-walker.standing {
+  animation: none;
+  left: 10px;
+  z-index: 2;
+}
+.cafe-walker.standing .cat-bob {
+  animation: cafe-idle 2.6s ease-in-out infinite;
+}
+@keyframes cafe-idle {
+  0%, 100% { transform: translateY(0) rotate(-1.5deg); }
+  50%      { transform: translateY(-1.5px) rotate(1.5deg); }
+}
 @keyframes cafe-walk-rtl {
   from { transform: translateX(100vw); }
   to   { transform: translateX(-72px); }
@@ -3647,6 +3721,26 @@ window.CTRLS_SUPABASE = {
     return out;
   }
 
+  // Every avatar item across all ranks — used to give the owner full access.
+  function allUnlocks() {
+    const out = {};
+    for (const k of UNLOCK_CATEGORIES) out[k] = [];
+    for (const key of RANK_ORDER) {
+      const tier = RANK_UNLOCKS[key];
+      for (const k of UNLOCK_CATEGORIES) out[k] = [...out[k], ...(tier[k] || [])];
+    }
+    return out;
+  }
+
+  // The owner = anyone who has unlocked barista mode on this device (knows the PIN).
+  // They get every prop unlocked so their café cat can be a styling mannequin.
+  function isOwnerDevice() {
+    try { return localStorage.getItem('ctrls_owner') === '1'; } catch { return false; }
+  }
+  function unlocksForProfile(cupCount) {
+    return isOwnerDevice() ? allUnlocks() : unlocksFor(cupCount);
+  }
+
   function rankFor(cupCount) {
     let r = RANKS[0];
     for (const x of RANKS) if (cupCount >= x.min) r = x;
@@ -3708,7 +3802,7 @@ window.CTRLS_SUPABASE = {
     STORAGE_KEY, ACTIVE_CODE_KEY,
     DEFAULT_SIGNATURE_MENU, DEFAULT_ASAP, DEFAULT_OPEN_DAYS,
     DEFAULT_AVATAR, normalizeAvatar, PROP_SLOT,
-    COLOR_OPTIONS, ROAST_ORDER, ROAST_OPTIONS, RANKS, RANK_UNLOCKS, RANK_ORDER, UNLOCK_CATEGORIES, unlocksFor,
+    COLOR_OPTIONS, ROAST_ORDER, ROAST_OPTIONS, RANKS, RANK_UNLOCKS, RANK_ORDER, UNLOCK_CATEGORIES, unlocksFor, allUnlocks, isOwnerDevice, unlocksForProfile,
     DOW_TH, DOW_EN, DOW_EN_SHORT,
     load, save, isoToday, isoDate, isOpen, orderCutoffForDate, canOrderDate, addMonths, daysBetween,
     remoteConfig, remoteEnabled, pullRemoteState, pushRemoteState, confirmOrders, subscribeRemoteState, adoptRemoteState,
@@ -4844,18 +4938,18 @@ function IdentityGate({ onClaim, onActivateCode }) {
           />
 
           <div className="team-ask">
-            <div className="h-hand" style={{ fontSize: 13, marginBottom: 6 }}>อยู่ในทีมครีเอทีฟไหม?</div>
+            <div className="h-hand" style={{ fontSize: 13, marginBottom: 6 }}>on the creative team?</div>
             <div className="team-pills">
               <button
                 type="button"
                 className={`team-pill ${!outOfTeam ? 'on' : ''}`}
                 onClick={() => setOutOfTeam(false)}
-              >ใช่ อยู่ในทีม</button>
+              >yep, on the team</button>
               <button
                 type="button"
                 className={`team-pill ${outOfTeam ? 'on' : ''}`}
                 onClick={() => setOutOfTeam(true)}
-              >มาจากทีม/ออฟฟิศอื่น</button>
+              >another team / office</button>
             </div>
           </div>
           {outOfTeam && (
@@ -4863,7 +4957,7 @@ function IdentityGate({ onClaim, onActivateCode }) {
               <input
                 className="name-input"
                 style={{ marginTop: 0 }}
-                placeholder="LINE ID (ไว้ส่งบิลให้นะ ☕)"
+                placeholder="LINE ID (so we can send your bill ☕)"
                 value={lineId}
                 onChange={(e) => setLineId(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && name.trim() && lineId.trim()) claim(); }}
@@ -5170,13 +5264,25 @@ function CafeLounge({ state, selectedDate, profile }) {
     return Object.values(byPerson).sort((a, b) => a.ts - b.ts);
   }, [state.orders, selectedDate]);
 
-  if (!patrons.length) return null;
+  // The owner/you are always present in the café — standing by the counter even
+  // without an order that day (also doubles as a showcase for your avatar props).
+  const meHasOrder = patrons.some((p) => p.key === profile.id || p.name === profile.name);
+  const standingMe = meHasOrder
+    ? null
+    : { key: profile.id || 'me', name: profile.name, avatar: profile.avatar, cups: 0, standing: true };
+
   const isToday = selectedDate === CTRLS.isoToday();
 
   return (
     <div className="section cafe-section">
       <div className="cafe-strip">
         <div className="cafe-lane">
+          {standingMe && (
+            <div className="cafe-walker standing me" title={`${standingMe.name} · standing by`}>
+              <span className="cafe-name mono">you</span>
+              <span className="cat-bob"><CatAvatar avatar={standingMe.avatar || { body: 'beige', expression: 'happy' }} size={34} /></span>
+            </div>
+          )}
           {patrons.map((p, i) => {
             const isMe = p.key === profile.id || p.name === profile.name;
             // alternate walking direction + stagger so the lane feels alive
@@ -5198,7 +5304,9 @@ function CafeLounge({ state, selectedDate, profile }) {
         <div className="cafe-floorline" />
       </div>
       <div className="mono dim cafe-hint">
-        {isToday ? `${patrons.length} ตัวกำลังเดินเล่นในคาเฟ่` : `${patrons.length} ตัววันนั้น`} · แต่งแมวในโปรไฟล์มาเดินด้วยกัน ✨
+        {patrons.length === 0
+          ? 'ยังไม่มีใครสั่งวันนี้ · คุณยืนรออยู่คนเดียวก่อน ☕'
+          : (isToday ? `${patrons.length} ตัวกำลังเดินเล่นในคาเฟ่` : `${patrons.length} ตัววันนั้น`)} · แต่งแมวในโปรไฟล์มาเดินด้วยกัน ✨
       </div>
     </div>
   );
@@ -5392,8 +5500,8 @@ function TodayNoteCard({ state }) {
   );
 }
 
-// === Cart sheet ===
-function CartSheet({ state, cart, onClose, onRemove, onPlace }) {
+// === Cart + confirm sheet (merged: review, edit, and place in one step) ===
+function CartSheet({ state, profile, cart, onClose, onRemove, onConfirm }) {
   const dates = Object.keys(cart).sort();
   const total = Object.values(cart).flat().reduce((s, it) => s + CTRLS.priceForItem(state, it), 0);
   return (
@@ -5406,6 +5514,11 @@ function CartSheet({ state, cart, onClose, onRemove, onPlace }) {
         </div>
         <div className="sheet-scroll no-scrollbar">
           {dates.length === 0 && <div className="empty mono">no cups yet</div>}
+          {dates.length > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 0 2px' }}>
+              <CatAvatar avatar={{ ...(profile?.avatar || {}), expression: 'sparkle' }} size={68} />
+            </div>
+          )}
           {dates.map((d) => {
             const sd = shortDate(d);
             return (
@@ -5432,56 +5545,10 @@ function CartSheet({ state, cart, onClose, onRemove, onPlace }) {
               <span className="h-doodle" style={{ fontSize: 32 }}>฿{formatBaht(total)}</span>
             </div>
           )}
-          <button className="btn-primary" disabled={dates.length === 0} onClick={() => onPlace(total)}>
+          <button className="btn-primary" disabled={dates.length === 0} onClick={() => onConfirm(total)}>
             place order →
           </button>
           <div className="footnote mono">pickup at your desk · pay the barista directly</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// === Confirm sheet ===
-function ConfirmSheet({ state, profile, cart, total, onClose, onConfirm }) {
-  const dates = Object.keys(cart).sort();
-  return (
-    <div className="sheet-backdrop" onClick={onClose}>
-      <div className="sheet" onClick={(e) => e.stopPropagation()}>
-        <div className="sheet-handle" />
-        <div className="sheet-title">
-          <span className="h-doodle" style={{ fontSize: 28 }}>confirm order</span>
-          <button className="x-big" onClick={onClose}>×</button>
-        </div>
-        <div className="sheet-scroll no-scrollbar">
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0 4px' }}>
-            <CatAvatar avatar={{ ...(profile?.avatar || {}), expression: 'sparkle' }} size={80} />
-          </div>
-          {dates.map((d) => {
-            const sd = shortDate(d);
-            return (
-              <div key={d} className="cart-group">
-                <div className="cart-group-head">
-                  <span className="h-doodle" style={{ fontSize: 20 }}>{sd.dow} {sd.day} {sd.mon}</span>
-                  <span className="mono dim">{cart[d].length} cup{cart[d].length !== 1 ? 's' : ''}</span>
-                </div>
-                {cart[d].map((it, i) => (
-                  <div key={i} className="cart-line">
-                    <span className="h-hand" style={{ flex: 1 }}>{CTRLS.itemLabel(state, it)}</span>
-                    <span className="mono dim">฿{CTRLS.priceForItem(state, it)}</span>
-                  </div>
-                ))}
-              </div>
-            );
-          })}
-        </div>
-        <div className="sheet-foot">
-          <div className="total-row">
-            <span className="h-hand">total</span>
-            <span className="h-doodle" style={{ fontSize: 32 }}>฿{formatBaht(total)}</span>
-          </div>
-          <button className="btn-primary" onClick={onConfirm}>place order →</button>
-          <div className="footnote mono">pay the barista directly · collect at your desk</div>
         </div>
       </div>
     </div>
@@ -5959,29 +6026,44 @@ function CustomerPocket({ state, setState, profile, setProfile, openProfile }) {
   }
 
   return (
-    <div className="customer-scroll no-scrollbar">
-      <WelcomeStrip profile={profile} state={state} onOpenProfile={openProfile} />
-
-      <TodayNoteCard state={state} />
-
-      <SubscriptionStrip
-        state={state}
-        profile={profile}
-        onOpen={() => setSubSheet('list')}
-        onCreate={() => setSubSheet('new')}
-      />
+    <div className="customer-scroll no-scrollbar order-compact">
+      {/* compact header — profile + today's note */}
+      <div className="order-header">
+        <button className="order-profile-btn" onClick={openProfile} title="profile">
+          <CatAvatar avatar={profile.avatar} size={40} />
+          <span className="order-profile-meta">
+            <span className="h-hand order-profile-name">{profile.name}</span>
+            <span className="mono order-profile-rank">{CTRLS.rankFor(profile.cupCount).label}</span>
+          </span>
+        </button>
+        <div className="order-header-note"><TodayNoteCard state={state} /></div>
+      </div>
 
       <DayPicker state={state} selectedDate={selectedDate} setSelectedDate={setSelectedDate} cart={cart} profile={profile} />
-      <CafeLounge state={state} selectedDate={selectedDate} profile={profile} />
-      {isClosed && (
-        <div className="section" style={{ paddingTop: 0 }}>
-          <div className="closed-banner">
-            <span className="h-hand">{shopClosed ? "shop's napping today 😴" : 'orders closed for this day'}</span>
-            <span className="mono dim">{shopClosed ? (() => { const d = new Date(selectedDate + 'T00:00:00'); return CTRLS.DOW_EN[d.getDay()].toLowerCase(); })() : 'cutoff · 23:59 day before'}</span>
-          </div>
+
+      {/* one-screen order grid: café+sub on one half, menu on the other
+          (stacked top/bottom on phones, side-by-side left/right on wide screens) */}
+      <div className="order-grid">
+        <div className="order-aside">
+          <CafeLounge state={state} selectedDate={selectedDate} profile={profile} />
+          <SubscriptionStrip
+            state={state}
+            profile={profile}
+            onOpen={() => setSubSheet('list')}
+            onCreate={() => setSubSheet('new')}
+          />
         </div>
-      )}
-      <MenuList state={state} isClosed={isClosed} onAdd={addItem} />
+        <div className="order-menu">
+          {isClosed && (
+            <div className="closed-banner">
+              <span className="h-hand">{shopClosed ? "shop's napping today 😴" : 'orders closed for this day'}</span>
+              <span className="mono dim">{shopClosed ? (() => { const d = new Date(selectedDate + 'T00:00:00'); return CTRLS.DOW_EN[d.getDay()].toLowerCase(); })() : 'cutoff · 23:59 day before'}</span>
+            </div>
+          )}
+          <MenuList state={state} isClosed={isClosed} onAdd={addItem} />
+        </div>
+      </div>
+
       <MissedBeans state={state} setState={setState} profile={profile} />
 
       {hasTeammates && (
@@ -6005,31 +6087,22 @@ function CustomerPocket({ state, setState, profile, setProfile, openProfile }) {
       </div>
 
       {cartCount > 0 && (
-        <button className="floating-cart" onClick={() => setShowCart(true)}>
+        <button className="order-bar" onClick={() => setShowCart(true)}>
           <Mug size={22} color="var(--cream)" fill="var(--terracotta)" />
-          <span className="h-doodle" style={{ fontSize: 22 }}>{cartCount} cup{cartCount > 1 ? 's' : ''}</span>
-          <span className="mono">฿{formatBaht(cartTotal)}</span>
-          <span className="cart-arrow">→</span>
+          <span className="h-doodle order-bar-cups" style={{ fontSize: 22 }}>{cartCount} cup{cartCount > 1 ? 's' : ''}</span>
+          <span className="order-bar-total mono">฿{formatBaht(cartTotal)}</span>
+          <span className="order-bar-cta h-hand">confirm →</span>
         </button>
       )}
 
       {showCart && (
         <CartSheet
           state={state}
+          profile={profile}
           cart={cart}
           onClose={() => setShowCart(false)}
           onRemove={removeItem}
-          onPlace={(total) => { setShowCart(false); setCheckout({ step: 'confirm', total }); }}
-        />
-      )}
-      {checkout?.step === 'confirm' && (
-        <ConfirmSheet
-          state={state}
-          profile={profile}
-          cart={cart}
-          total={checkout.total}
-          onClose={() => setCheckout(null)}
-          onConfirm={() => placeOrder(checkout.total)}
+          onConfirm={(total) => { setShowCart(false); placeOrder(total); }}
         />
       )}
       {checkout?.step === 'done' && (
@@ -6660,7 +6733,7 @@ function RankGate({ unlockedAt, onPreview, children }) {
 
 function AvatarTab({ profile, setProfile }) {
   const a = CTRLS.normalizeAvatar(profile.avatar);
-  const unlocks = CTRLS.unlocksFor(profile.cupCount);
+  const unlocks = CTRLS.unlocksForProfile(profile.cupCount);
   const rank = CTRLS.rankFor(profile.cupCount);
   const nextRank = CTRLS.nextRank(profile.cupCount);
 
@@ -7089,6 +7162,8 @@ function BaristaPinGate({ state, onUnlock }) {
   function submit() {
     if (pin === state.barista.baristaPin) {
       try { sessionStorage.setItem('ctrls_barista_session', '1'); } catch {}
+      // mark this device as the owner → unlocks all avatar props in profile
+      try { localStorage.setItem('ctrls_owner', '1'); } catch {}
       onUnlock();
     } else {
       setBad(true);

@@ -24,10 +24,10 @@
   --line-strong: rgba(107, 78, 61, 0.35);
 
   /* Fonts */
-  --font-doodle: 'Caveat', 'Patrick Hand', cursive;
-  --font-hand: 'Patrick Hand', 'Caveat', cursive;
-  --font-body: 'Nunito', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+  --font-doodle: 'Caveat', 'Itim', 'Patrick Hand', cursive;
+  --font-hand: 'Patrick Hand', 'Itim', 'Caveat', cursive;
+  --font-body: 'Nunito', 'Noto Sans Thai', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Noto Sans Thai', 'Courier New', monospace;
 }
 
 /* Dark mode */

@@ -9,6 +9,8 @@ function BaristaPinGate({ state, onUnlock }) {
   function submit() {
     if (pin === state.barista.baristaPin) {
       try { sessionStorage.setItem('ctrls_barista_session', '1'); } catch {}
+      // mark this device as the owner → unlocks all avatar props in profile
+      try { localStorage.setItem('ctrls_owner', '1'); } catch {}
       onUnlock();
     } else {
       setBad(true);

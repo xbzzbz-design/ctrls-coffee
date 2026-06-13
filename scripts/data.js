@@ -514,6 +514,26 @@
     return out;
   }
 
+  // Every avatar item across all ranks — used to give the owner full access.
+  function allUnlocks() {
+    const out = {};
+    for (const k of UNLOCK_CATEGORIES) out[k] = [];
+    for (const key of RANK_ORDER) {
+      const tier = RANK_UNLOCKS[key];
+      for (const k of UNLOCK_CATEGORIES) out[k] = [...out[k], ...(tier[k] || [])];
+    }
+    return out;
+  }
+
+  // The owner = anyone who has unlocked barista mode on this device (knows the PIN).
+  // They get every prop unlocked so their café cat can be a styling mannequin.
+  function isOwnerDevice() {
+    try { return localStorage.getItem('ctrls_owner') === '1'; } catch { return false; }
+  }
+  function unlocksForProfile(cupCount) {
+    return isOwnerDevice() ? allUnlocks() : unlocksFor(cupCount);
+  }
+
   function rankFor(cupCount) {
     let r = RANKS[0];
     for (const x of RANKS) if (cupCount >= x.min) r = x;
@@ -575,7 +595,7 @@
     STORAGE_KEY, ACTIVE_CODE_KEY,
     DEFAULT_SIGNATURE_MENU, DEFAULT_ASAP, DEFAULT_OPEN_DAYS,
     DEFAULT_AVATAR, normalizeAvatar, PROP_SLOT,
-    COLOR_OPTIONS, ROAST_ORDER, ROAST_OPTIONS, RANKS, RANK_UNLOCKS, RANK_ORDER, UNLOCK_CATEGORIES, unlocksFor,
+    COLOR_OPTIONS, ROAST_ORDER, ROAST_OPTIONS, RANKS, RANK_UNLOCKS, RANK_ORDER, UNLOCK_CATEGORIES, unlocksFor, allUnlocks, isOwnerDevice, unlocksForProfile,
     DOW_TH, DOW_EN, DOW_EN_SHORT,
     load, save, isoToday, isoDate, isOpen, orderCutoffForDate, canOrderDate, addMonths, daysBetween,
     remoteConfig, remoteEnabled, pullRemoteState, pushRemoteState, confirmOrders, subscribeRemoteState, adoptRemoteState,

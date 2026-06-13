@@ -88,18 +88,18 @@ function IdentityGate({ onClaim, onActivateCode }) {
           />
 
           <div className="team-ask">
-            <div className="h-hand" style={{ fontSize: 13, marginBottom: 6 }}>อยู่ในทีมครีเอทีฟไหม?</div>
+            <div className="h-hand" style={{ fontSize: 13, marginBottom: 6 }}>on the creative team?</div>
             <div className="team-pills">
               <button
                 type="button"
                 className={`team-pill ${!outOfTeam ? 'on' : ''}`}
                 onClick={() => setOutOfTeam(false)}
-              >ใช่ อยู่ในทีม</button>
+              >yep, on the team</button>
               <button
                 type="button"
                 className={`team-pill ${outOfTeam ? 'on' : ''}`}
                 onClick={() => setOutOfTeam(true)}
-              >มาจากทีม/ออฟฟิศอื่น</button>
+              >another team / office</button>
             </div>
           </div>
           {outOfTeam && (
@@ -107,7 +107,7 @@ function IdentityGate({ onClaim, onActivateCode }) {
               <input
                 className="name-input"
                 style={{ marginTop: 0 }}
-                placeholder="LINE ID (ไว้ส่งบิลให้นะ ☕)"
+                placeholder="LINE ID (so we can send your bill ☕)"
                 value={lineId}
                 onChange={(e) => setLineId(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && name.trim() && lineId.trim()) claim(); }}
@@ -414,13 +414,25 @@ function CafeLounge({ state, selectedDate, profile }) {
     return Object.values(byPerson).sort((a, b) => a.ts - b.ts);
   }, [state.orders, selectedDate]);
 
-  if (!patrons.length) return null;
+  // The owner/you are always present in the café — standing by the counter even
+  // without an order that day (also doubles as a showcase for your avatar props).
+  const meHasOrder = patrons.some((p) => p.key === profile.id || p.name === profile.name);
+  const standingMe = meHasOrder
+    ? null
+    : { key: profile.id || 'me', name: profile.name, avatar: profile.avatar, cups: 0, standing: true };
+
   const isToday = selectedDate === CTRLS.isoToday();
 
   return (
     <div className="section cafe-section">
       <div className="cafe-strip">
         <div className="cafe-lane">
+          {standingMe && (
+            <div className="cafe-walker standing me" title={`${standingMe.name} · standing by`}>
+              <span className="cafe-name mono">you</span>
+              <span className="cat-bob"><CatAvatar avatar={standingMe.avatar || { body: 'beige', expression: 'happy' }} size={34} /></span>
+            </div>
+          )}
           {patrons.map((p, i) => {
             const isMe = p.key === profile.id || p.name === profile.name;
             // alternate walking direction + stagger so the lane feels alive
@@ -442,7 +454,9 @@ function CafeLounge({ state, selectedDate, profile }) {
         <div className="cafe-floorline" />
       </div>
       <div className="mono dim cafe-hint">
-        {isToday ? `${patrons.length} ตัวกำลังเดินเล่นในคาเฟ่` : `${patrons.length} ตัววันนั้น`} · แต่งแมวในโปรไฟล์มาเดินด้วยกัน ✨
+        {patrons.length === 0
+          ? 'ยังไม่มีใครสั่งวันนี้ · คุณยืนรออยู่คนเดียวก่อน ☕'
+          : (isToday ? `${patrons.length} ตัวกำลังเดินเล่นในคาเฟ่` : `${patrons.length} ตัววันนั้น`)} · แต่งแมวในโปรไฟล์มาเดินด้วยกัน ✨
       </div>
     </div>
   );
@@ -636,8 +650,8 @@ function TodayNoteCard({ state }) {
   );
 }
 
-// === Cart sheet ===
-function CartSheet({ state, cart, onClose, onRemove, onPlace }) {
+// === Cart + confirm sheet (merged: review, edit, and place in one step) ===
+function CartSheet({ state, profile, cart, onClose, onRemove, onConfirm }) {
   const dates = Object.keys(cart).sort();
   const total = Object.values(cart).flat().reduce((s, it) => s + CTRLS.priceForItem(state, it), 0);
   return (
@@ -650,6 +664,11 @@ function CartSheet({ state, cart, onClose, onRemove, onPlace }) {
         </div>
         <div className="sheet-scroll no-scrollbar">
           {dates.length === 0 && <div className="empty mono">no cups yet</div>}
+          {dates.length > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 0 2px' }}>
+              <CatAvatar avatar={{ ...(profile?.avatar || {}), expression: 'sparkle' }} size={68} />
+            </div>
+          )}
           {dates.map((d) => {
             const sd = shortDate(d);
             return (
@@ -676,56 +695,10 @@ function CartSheet({ state, cart, onClose, onRemove, onPlace }) {
               <span className="h-doodle" style={{ fontSize: 32 }}>฿{formatBaht(total)}</span>
             </div>
           )}
-          <button className="btn-primary" disabled={dates.length === 0} onClick={() => onPlace(total)}>
+          <button className="btn-primary" disabled={dates.length === 0} onClick={() => onConfirm(total)}>
             place order →
           </button>
           <div className="footnote mono">pickup at your desk · pay the barista directly</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// === Confirm sheet ===
-function ConfirmSheet({ state, profile, cart, total, onClose, onConfirm }) {
-  const dates = Object.keys(cart).sort();
-  return (
-    <div className="sheet-backdrop" onClick={onClose}>
-      <div className="sheet" onClick={(e) => e.stopPropagation()}>
-        <div className="sheet-handle" />
-        <div className="sheet-title">
-          <span className="h-doodle" style={{ fontSize: 28 }}>confirm order</span>
-          <button className="x-big" onClick={onClose}>×</button>
-        </div>
-        <div className="sheet-scroll no-scrollbar">
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0 4px' }}>
-            <CatAvatar avatar={{ ...(profile?.avatar || {}), expression: 'sparkle' }} size={80} />
-          </div>
-          {dates.map((d) => {
-            const sd = shortDate(d);
-            return (
-              <div key={d} className="cart-group">
-                <div className="cart-group-head">
-                  <span className="h-doodle" style={{ fontSize: 20 }}>{sd.dow} {sd.day} {sd.mon}</span>
-                  <span className="mono dim">{cart[d].length} cup{cart[d].length !== 1 ? 's' : ''}</span>
-                </div>
-                {cart[d].map((it, i) => (
-                  <div key={i} className="cart-line">
-                    <span className="h-hand" style={{ flex: 1 }}>{CTRLS.itemLabel(state, it)}</span>
-                    <span className="mono dim">฿{CTRLS.priceForItem(state, it)}</span>
-                  </div>
-                ))}
-              </div>
-            );
-          })}
-        </div>
-        <div className="sheet-foot">
-          <div className="total-row">
-            <span className="h-hand">total</span>
-            <span className="h-doodle" style={{ fontSize: 32 }}>฿{formatBaht(total)}</span>
-          </div>
-          <button className="btn-primary" onClick={onConfirm}>place order →</button>
-          <div className="footnote mono">pay the barista directly · collect at your desk</div>
         </div>
       </div>
     </div>
@@ -1203,29 +1176,44 @@ function CustomerPocket({ state, setState, profile, setProfile, openProfile }) {
   }
 
   return (
-    <div className="customer-scroll no-scrollbar">
-      <WelcomeStrip profile={profile} state={state} onOpenProfile={openProfile} />
-
-      <TodayNoteCard state={state} />
-
-      <SubscriptionStrip
-        state={state}
-        profile={profile}
-        onOpen={() => setSubSheet('list')}
-        onCreate={() => setSubSheet('new')}
-      />
+    <div className="customer-scroll no-scrollbar order-compact">
+      {/* compact header — profile + today's note */}
+      <div className="order-header">
+        <button className="order-profile-btn" onClick={openProfile} title="profile">
+          <CatAvatar avatar={profile.avatar} size={40} />
+          <span className="order-profile-meta">
+            <span className="h-hand order-profile-name">{profile.name}</span>
+            <span className="mono order-profile-rank">{CTRLS.rankFor(profile.cupCount).label}</span>
+          </span>
+        </button>
+        <div className="order-header-note"><TodayNoteCard state={state} /></div>
+      </div>
 
       <DayPicker state={state} selectedDate={selectedDate} setSelectedDate={setSelectedDate} cart={cart} profile={profile} />
-      <CafeLounge state={state} selectedDate={selectedDate} profile={profile} />
-      {isClosed && (
-        <div className="section" style={{ paddingTop: 0 }}>
-          <div className="closed-banner">
-            <span className="h-hand">{shopClosed ? "shop's napping today 😴" : 'orders closed for this day'}</span>
-            <span className="mono dim">{shopClosed ? (() => { const d = new Date(selectedDate + 'T00:00:00'); return CTRLS.DOW_EN[d.getDay()].toLowerCase(); })() : 'cutoff · 23:59 day before'}</span>
-          </div>
+
+      {/* one-screen order grid: café+sub on one half, menu on the other
+          (stacked top/bottom on phones, side-by-side left/right on wide screens) */}
+      <div className="order-grid">
+        <div className="order-aside">
+          <CafeLounge state={state} selectedDate={selectedDate} profile={profile} />
+          <SubscriptionStrip
+            state={state}
+            profile={profile}
+            onOpen={() => setSubSheet('list')}
+            onCreate={() => setSubSheet('new')}
+          />
         </div>
-      )}
-      <MenuList state={state} isClosed={isClosed} onAdd={addItem} />
+        <div className="order-menu">
+          {isClosed && (
+            <div className="closed-banner">
+              <span className="h-hand">{shopClosed ? "shop's napping today 😴" : 'orders closed for this day'}</span>
+              <span className="mono dim">{shopClosed ? (() => { const d = new Date(selectedDate + 'T00:00:00'); return CTRLS.DOW_EN[d.getDay()].toLowerCase(); })() : 'cutoff · 23:59 day before'}</span>
+            </div>
+          )}
+          <MenuList state={state} isClosed={isClosed} onAdd={addItem} />
+        </div>
+      </div>
+
       <MissedBeans state={state} setState={setState} profile={profile} />
 
       {hasTeammates && (
@@ -1249,31 +1237,22 @@ function CustomerPocket({ state, setState, profile, setProfile, openProfile }) {
       </div>
 
       {cartCount > 0 && (
-        <button className="floating-cart" onClick={() => setShowCart(true)}>
+        <button className="order-bar" onClick={() => setShowCart(true)}>
           <Mug size={22} color="var(--cream)" fill="var(--terracotta)" />
-          <span className="h-doodle" style={{ fontSize: 22 }}>{cartCount} cup{cartCount > 1 ? 's' : ''}</span>
-          <span className="mono">฿{formatBaht(cartTotal)}</span>
-          <span className="cart-arrow">→</span>
+          <span className="h-doodle order-bar-cups" style={{ fontSize: 22 }}>{cartCount} cup{cartCount > 1 ? 's' : ''}</span>
+          <span className="order-bar-total mono">฿{formatBaht(cartTotal)}</span>
+          <span className="order-bar-cta h-hand">confirm →</span>
         </button>
       )}
 
       {showCart && (
         <CartSheet
           state={state}
+          profile={profile}
           cart={cart}
           onClose={() => setShowCart(false)}
           onRemove={removeItem}
-          onPlace={(total) => { setShowCart(false); setCheckout({ step: 'confirm', total }); }}
-        />
-      )}
-      {checkout?.step === 'confirm' && (
-        <ConfirmSheet
-          state={state}
-          profile={profile}
-          cart={cart}
-          total={checkout.total}
-          onClose={() => setCheckout(null)}
-          onConfirm={() => placeOrder(checkout.total)}
+          onConfirm={(total) => { setShowCart(false); placeOrder(total); }}
         />
       )}
       {checkout?.step === 'done' && (

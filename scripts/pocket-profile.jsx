@@ -584,7 +584,7 @@ function RankGate({ unlockedAt, onPreview, children }) {
 
 function AvatarTab({ profile, setProfile }) {
   const a = CTRLS.normalizeAvatar(profile.avatar);
-  const unlocks = CTRLS.unlocksFor(profile.cupCount);
+  const unlocks = CTRLS.unlocksForProfile(profile.cupCount);
   const rank = CTRLS.rankFor(profile.cupCount);
   const nextRank = CTRLS.nextRank(profile.cupCount);
 
