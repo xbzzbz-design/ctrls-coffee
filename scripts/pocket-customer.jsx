@@ -481,8 +481,10 @@ function CafeLounge({ state, selectedDate, profile }) {
       </div>
       <div className="mono dim cafe-hint">
         {patrons.length === 0
-          ? 'ยังไม่มีใครสั่งวันนี้ · คุณยืนรออยู่คนเดียวก่อน ☕'
-          : (isToday ? `${patrons.length} ตัวกำลังเดินเล่นในคาเฟ่` : `${patrons.length} ตัววันนั้น`)} · แต่งแมวในโปรไฟล์มาเดินด้วยกัน ✨
+          ? 'just you at the café for now ☕'
+          : (isToday
+              ? `${patrons.length} ${patrons.length === 1 ? 'cat' : 'cats'} hanging out today ☕`
+              : `${patrons.length} ${patrons.length === 1 ? 'cat' : 'cats'} that day`)}
       </div>
     </div>
   );
