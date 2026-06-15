@@ -549,16 +549,6 @@ input, textarea, select { font: inherit; color: inherit; }
 }
 .sub-chip-end { flex-shrink: 0; margin-left: auto; font-size: 18px; color: var(--brown-light); }
 
-.outteam-pricenote {
-  display: inline-block;
-  background: rgba(201, 123, 95, 0.12);
-  color: var(--terracotta);
-  font-size: 10px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  margin-bottom: 6px;
-}
-
 /* phone default: café+sub stacked above the menu (top / bottom halves) */
 .order-grid { display: block; }
 .order-aside .section,
@@ -3245,6 +3235,13 @@ input, textarea, select { font: inherit; color: inherit; }
   text-align: center;
   margin-top: 6px;
 }
+.cafe-dress-hint {
+  font-size: 12px;
+  text-align: center;
+  margin-top: 2px;
+  color: var(--brown-light);
+  opacity: 0.9;
+}
 
 
 </style>
@@ -5404,6 +5401,7 @@ function CafeLounge({ state, selectedDate, profile }) {
               ? `${patrons.length} ${patrons.length === 1 ? 'cat' : 'cats'} hanging out today ☕`
               : `${patrons.length} ${patrons.length === 1 ? 'cat' : 'cats'} that day`)}
       </div>
+      <div className="cafe-dress-hint h-hand">✨ dress up your cat — open your profile up top</div>
     </div>
   );
 }
@@ -5605,7 +5603,6 @@ function TodayNoteCard({ state }) {
 // === Cart + confirm sheet (merged: review, edit, and place in one step) ===
 function CartSheet({ state, profile, cart, onClose, onRemove, onConfirm }) {
   const dates = Object.keys(cart).sort();
-  const surcharge = profile?.outOfTeam ? CTRLS.outOfTeamSurcharge(state) : 0;
   const total = Object.values(cart).flat().reduce((s, it) => s + CTRLS.customerItemPrice(state, it, profile), 0);
   return (
     <div className="sheet-backdrop" onClick={onClose}>
@@ -5651,9 +5648,7 @@ function CartSheet({ state, profile, cart, onClose, onRemove, onConfirm }) {
           <button className="btn-primary" disabled={dates.length === 0} onClick={() => onConfirm(total)}>
             place order →
           </button>
-          <div className="footnote mono">
-            {surcharge > 0 ? `includes out-of-team +฿${surcharge}/cup · ` : ''}pickup at your desk · pay the barista directly
-          </div>
+          <div className="footnote mono">pickup at your desk · pay the barista directly</div>
         </div>
       </div>
     </div>
@@ -6161,11 +6156,6 @@ function CustomerPocket({ state, setState, profile, setProfile, openProfile }) {
           <CafeLounge state={state} selectedDate={selectedDate} profile={profile} />
         </div>
         <div className="order-menu">
-          {surcharge > 0 && (
-            <div className="section" style={{ paddingTop: 0, paddingBottom: 0 }}>
-              <div className="outteam-pricenote mono">out-of-team · +฿{surcharge}/cup included in prices</div>
-            </div>
-          )}
           {isClosed && (
             <div className="closed-banner">
               <span className="h-hand">{shopClosed ? "shop's napping today 😴" : 'orders closed for this day'}</span>
