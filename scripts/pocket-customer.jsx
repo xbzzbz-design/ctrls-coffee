@@ -536,7 +536,7 @@ function MissedBeans({ state, setState, profile }) {
   );
 }
 
-function MenuList({ state, isClosed, onAdd }) {
+function MenuList({ state, isClosed, onAdd, surcharge = 0 }) {
   const [showAsap, setShowAsap] = _usC(false);
   const [activeRoast, setActiveRoast] = _usC('all');
 
@@ -585,7 +585,7 @@ function MenuList({ state, isClosed, onAdd }) {
                 <div style={{ fontSize: 12, color: 'var(--brown)', margin: '3px 0 5px', lineHeight: 1.3 }}>{feat.notes}</div>
                 <span className={`roast-pill ${CTRLS.itemRoast(feat)}`}>{CTRLS.itemRoast(feat)}</span>
               </div>
-              <div className="h-doodle" style={{ fontSize: 28, color: 'var(--terracotta)', flexShrink: 0 }}>฿{feat.price}</div>
+              <div className="h-doodle" style={{ fontSize: 28, color: 'var(--terracotta)', flexShrink: 0 }}>฿{feat.price + surcharge}</div>
             </div>
           </button>
         );
@@ -612,7 +612,7 @@ function MenuList({ state, isClosed, onAdd }) {
           <div className="mood-foot">
             <div className="mood-tagline h-hand">{m.tagline}</div>
             <div className="mood-cta">
-              <div className="mood-price h-doodle">฿{m.price}</div>
+              <div className="mood-price h-doodle">฿{m.price + surcharge}</div>
               <div className="mood-emoji">{m.mood}</div>
             </div>
           </div>
@@ -628,7 +628,7 @@ function MenuList({ state, isClosed, onAdd }) {
           <div className="mood-tagline h-hand">trust the cat. it knows.</div>
         </div>
         <div className="mood-cta">
-          <div className="mood-price h-doodle">฿40·60</div>
+          <div className="mood-price h-doodle">฿{40 + surcharge}·{60 + surcharge}</div>
           <div className="mood-emoji" style={{ fontSize: 20 }}>{showAsap ? '−' : '＋'}</div>
         </div>
       </button>
@@ -659,7 +659,7 @@ function MenuList({ state, isClosed, onAdd }) {
                   <span className={`roast-pill ${CTRLS.itemRoast(a)}`}>{CTRLS.itemRoast(a)}</span>
                 </div>
               </div>
-              <div className="asap-price h-doodle">฿{a.price}</div>
+              <div className="asap-price h-doodle">฿{a.price + surcharge}</div>
             </button>
           ))}
         </div>
@@ -687,7 +687,8 @@ function TodayNoteCard({ state }) {
 // === Cart + confirm sheet (merged: review, edit, and place in one step) ===
 function CartSheet({ state, profile, cart, onClose, onRemove, onConfirm }) {
   const dates = Object.keys(cart).sort();
-  const total = Object.values(cart).flat().reduce((s, it) => s + CTRLS.priceForItem(state, it), 0);
+  const surcharge = profile?.outOfTeam ? CTRLS.outOfTeamSurcharge(state) : 0;
+  const total = Object.values(cart).flat().reduce((s, it) => s + CTRLS.customerItemPrice(state, it, profile), 0);
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
@@ -714,7 +715,7 @@ function CartSheet({ state, profile, cart, onClose, onRemove, onConfirm }) {
                 {cart[d].map((it, i) => (
                   <div key={i} className="cart-line">
                     <span className="h-hand" style={{ flex: 1 }}>{CTRLS.itemLabel(state, it)}</span>
-                    <span className="mono dim">฿{CTRLS.priceForItem(state, it)}</span>
+                    <span className="mono dim">฿{CTRLS.customerItemPrice(state, it, profile)}</span>
                     <button className="x" onClick={() => onRemove(d, i)}>×</button>
                   </div>
                 ))}
@@ -732,7 +733,9 @@ function CartSheet({ state, profile, cart, onClose, onRemove, onConfirm }) {
           <button className="btn-primary" disabled={dates.length === 0} onClick={() => onConfirm(total)}>
             place order →
           </button>
-          <div className="footnote mono">pickup at your desk · pay the barista directly</div>
+          <div className="footnote mono">
+            {surcharge > 0 ? `includes out-of-team +฿${surcharge}/cup · ` : ''}pickup at your desk · pay the barista directly
+          </div>
         </div>
       </div>
     </div>
@@ -772,7 +775,7 @@ function DayItemsList({ state, selectedDate, dayItems, onRemove, profile }) {
             <div key={i} className="dayitem">
               <Mug size={18} color="var(--charcoal)" fill={COLOR_TO_SOFT[CTRLS.itemColor(state, it)] || 'var(--terracotta-soft)'} />
               <span className="h-hand" style={{ flex: 1 }}>{CTRLS.itemLabel(state, it)}</span>
-              <span className="mono dim">฿{CTRLS.priceForItem(state, it)}</span>
+              <span className="mono dim">฿{CTRLS.customerItemPrice(state, it, profile)}</span>
               <button className="x" onClick={() => onRemove(selectedDate, i)}>×</button>
             </div>
           ))}
@@ -1050,9 +1053,10 @@ function CustomerPocket({ state, setState, profile, setProfile, openProfile }) {
   const [showGiftSheet, setShowGiftSheet] = _usC(false);
   const [giftDismissed, setGiftDismissed] = _usC(false);
 
+  const surcharge = profile.outOfTeam ? CTRLS.outOfTeamSurcharge(state) : 0;
   const dayItems = cart[selectedDate] || [];
   const cartCount = Object.values(cart).reduce((s, arr) => s + arr.length, 0);
-  const cartTotal = Object.values(cart).flat().reduce((s, it) => s + CTRLS.priceForItem(state, it), 0);
+  const cartTotal = Object.values(cart).flat().reduce((s, it) => s + CTRLS.customerItemPrice(state, it, profile), 0);
   const shopClosed = !CTRLS.isOpen(state, selectedDate);
   const orderClosed = !shopClosed && !CTRLS.canOrderDate(state, selectedDate);
   const isClosed = shopClosed || orderClosed;
@@ -1239,13 +1243,18 @@ function CustomerPocket({ state, setState, profile, setProfile, openProfile }) {
           <CafeLounge state={state} selectedDate={selectedDate} profile={profile} />
         </div>
         <div className="order-menu">
+          {surcharge > 0 && (
+            <div className="section" style={{ paddingTop: 0, paddingBottom: 0 }}>
+              <div className="outteam-pricenote mono">out-of-team · +฿{surcharge}/cup included in prices</div>
+            </div>
+          )}
           {isClosed && (
             <div className="closed-banner">
               <span className="h-hand">{shopClosed ? "shop's napping today 😴" : 'orders closed for this day'}</span>
               <span className="mono dim">{shopClosed ? (() => { const d = new Date(selectedDate + 'T00:00:00'); return CTRLS.DOW_EN[d.getDay()].toLowerCase(); })() : 'cutoff · 23:59 day before'}</span>
             </div>
           )}
-          <MenuList state={state} isClosed={isClosed} onAdd={addItem} />
+          <MenuList state={state} isClosed={isClosed} onAdd={addItem} surcharge={surcharge} />
         </div>
       </div>
 

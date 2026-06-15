@@ -464,12 +464,17 @@ function SummaryTab({ state }) {
     return isoFromDate(d);
   });
   const [copied, setCopied] = _usB(false);
+  const [copiedOut, setCopiedOut] = _usB(false);
 
-  const orders = state.orders.filter((o) => o.date === target && CTRLS.isConfirmedOrder(o)).sort((a, b) => a.ts - b.ts);
+  const allOrders = state.orders.filter((o) => o.date === target && CTRLS.isConfirmedOrder(o)).sort((a, b) => a.ts - b.ts);
+  // Team summary goes to the internal group chat → exclude out-of-team folks;
+  // they bill individually, so they get their own separate list.
+  const orders = allOrders.filter((o) => !o.outOfTeam);
+  const outOrders = allOrders.filter((o) => o.outOfTeam);
   const totalCups = orders.reduce((s, o) => s + o.items.length, 0);
   const totalBaht = orders.reduce((s, o) => s + CTRLS.orderTotal(state, o), 0);
 
-  // Aggregate by drink name for prep count
+  // Aggregate by drink name for prep count (team only)
   const drinkCount = {};
   orders.forEach((o) => o.items.forEach((it) => {
     const label = CTRLS.itemLabel(state, it);
@@ -491,15 +496,36 @@ function SummaryTab({ state }) {
   if (orders.length === 0) lines.push(`  (none yet)`);
   orders.forEach((o) => {
     const items = o.items.map((it) => CTRLS.itemLabel(state, it)).join(', ');
-    const teamTag = o.outOfTeam ? ` · นอกทีม +฿${CTRLS.outOfTeamSurcharge(state) * CTRLS.cupQty(o)}${o.lineId ? ` (LINE: ${o.lineId})` : ''}` : '';
-    const tag = (o.source === 'gift' ? ` 🎁${o.gifterName ? ' from ' + o.gifterName : ''}` : o.source === 'subscription' ? ' 📌' : '') + teamTag;
+    const tag = (o.source === 'gift' ? ` 🎁${o.gifterName ? ' from ' + o.gifterName : ''}` : o.source === 'subscription' ? ' 📌' : '');
     lines.push(`  • ${o.name}: ${items}${tag}`);
   });
   const summaryText = lines.join('\n');
+
+  // Separate out-of-team list — billed individually (with LINE IDs)
+  const outCups = outOrders.reduce((s, o) => s + o.items.length, 0);
+  const outBaht = outOrders.reduce((s, o) => s + CTRLS.orderTotal(state, o), 0);
+  const outLines = [];
+  outLines.push(`🧾 OUT-OF-TEAM — ${sd.dow} ${sd.day} ${sd.monLong}`);
+  outLines.push(`────────────────────`);
+  outLines.push(`${outCups} cup${outCups !== 1 ? 's' : ''} · ฿${formatBaht(outBaht)} · bill individually`);
+  outLines.push('');
+  outOrders.forEach((o) => {
+    const items = o.items.map((it) => CTRLS.itemLabel(state, it)).join(', ');
+    const line = o.lineId ? ` · LINE: ${o.lineId}` : ' · no LINE ID';
+    outLines.push(`  • ${o.name}: ${items} · ฿${formatBaht(CTRLS.orderTotal(state, o))}${line}`);
+  });
+  const outText = outLines.join('\n');
+
   async function copy() {
     if (await copyText(summaryText)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
+    }
+  }
+  async function copyOut() {
+    if (await copyText(outText)) {
+      setCopiedOut(true);
+      setTimeout(() => setCopiedOut(false), 1600);
     }
   }
   // Generate next 7 day chips
@@ -521,12 +547,23 @@ function SummaryTab({ state }) {
       </div>
       <div className="summary-card">
         <div className="asap-head">
-          <span className="mono dim">copy & paste for nightly check</span>
+          <span className="mono dim">team · copy & paste for nightly check</span>
           <button className={`copy-btn ${copied ? 'copied' : ''}`} onClick={copy}>{copied ? '✓ copied' : '📋 copy'}</button>
         </div>
         <pre className="summary-pre">{summaryText}</pre>
       </div>
       <div className="footnote mono" style={{ padding: '4px 0' }}>tip · paste into your group chat in the evening to double-check before brewing</div>
+
+      {outOrders.length > 0 && (
+        <div className="summary-card" style={{ marginTop: 12 }}>
+          <div className="asap-head">
+            <span className="mono dim">out-of-team · {outOrders.length} · bill individually</span>
+            <button className={`copy-btn ${copiedOut ? 'copied' : ''}`} onClick={copyOut}>{copiedOut ? '✓ copied' : '📋 copy'}</button>
+          </div>
+          <pre className="summary-pre">{outText}</pre>
+          <div className="footnote mono" style={{ padding: '4px 0' }}>kept out of the team list · DM each person their bill via LINE</div>
+        </div>
+      )}
     </div>
   );
 }

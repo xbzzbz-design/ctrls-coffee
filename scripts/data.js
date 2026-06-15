@@ -269,6 +269,11 @@
     return (ref ? ref.price : 0) * (item.qty || 1);
   }
   function outOfTeamSurcharge(state) { return state.barista?.outOfTeamSurcharge ?? 20; }
+  // Per-item price as the customer should SEE it — out-of-team folks pay the
+  // per-cup surcharge, so fold it into the displayed price (matches orderTotal).
+  function customerItemPrice(state, item, profile) {
+    return priceForItem(state, item) + (profile?.outOfTeam ? outOfTeamSurcharge(state) * (item.qty || 1) : 0);
+  }
   function orderTotal(state, order) {
     const base = order.items.reduce((s, it) => s + priceForItem(state, it), 0);
     // Out-of-team orderers pay a per-cup surcharge (snapshotted on the order).
@@ -599,7 +604,7 @@
     DOW_TH, DOW_EN, DOW_EN_SHORT,
     load, save, isoToday, isoDate, isOpen, orderCutoffForDate, canOrderDate, addMonths, daysBetween,
     remoteConfig, remoteEnabled, pullRemoteState, pushRemoteState, confirmOrders, subscribeRemoteState, adoptRemoteState,
-    menuById, asapById, priceForItem, orderTotal, outOfTeamSurcharge, itemRoast, isAvailable, subscriptionCandidatesForTemplate, subscriptionTemplateAvailable, isConfirmedOrder, orderBelongsToProfile, cupQty, cupCountForProfile, itemLabel, itemColor,
+    menuById, asapById, priceForItem, customerItemPrice, orderTotal, outOfTeamSurcharge, itemRoast, isAvailable, subscriptionCandidatesForTemplate, subscriptionTemplateAvailable, isConfirmedOrder, orderBelongsToProfile, cupQty, cupCountForProfile, itemLabel, itemColor,
     activeCode, setActiveCode, genCode, newProfile,
     getActiveProfile, upsertProfile, profileByCode,
     rankFor, nextRank,

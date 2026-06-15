@@ -421,6 +421,16 @@
 }
 .sub-chip-end { flex-shrink: 0; margin-left: auto; font-size: 18px; color: var(--brown-light); }
 
+.outteam-pricenote {
+  display: inline-block;
+  background: rgba(201, 123, 95, 0.12);
+  color: var(--terracotta);
+  font-size: 10px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  margin-bottom: 6px;
+}
+
 /* phone default: café+sub stacked above the menu (top / bottom halves) */
 .order-grid { display: block; }
 .order-aside .section,
