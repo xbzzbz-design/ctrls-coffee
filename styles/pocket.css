@@ -2668,6 +2668,17 @@
 .billing-list {
   padding: 0 16px;
 }
+.billing-section {
+  margin-top: 12px;
+}
+.billing-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 16px 8px;
+  border-bottom: 1px dashed var(--line);
+}
 .billing-row {
   display: flex;
   align-items: center;
@@ -2679,6 +2690,29 @@
 .billing-mid {
   flex: 1;
   min-width: 0;
+}
+
+.bill-edit-original {
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+}
+.quick-person-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.quick-person-row .btn-mini.active {
+  border-color: var(--mustard);
+  background: var(--mustard-soft);
+}
+.bill-edit-toggle {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0 8px;
 }
 
 /* === Ordering info === */

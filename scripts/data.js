@@ -274,10 +274,28 @@
   function customerItemPrice(state, item, profile) {
     return priceForItem(state, item) + (profile?.outOfTeam ? outOfTeamSurcharge(state) * (item.qty || 1) : 0);
   }
+  function orderBillName(order) {
+    return order?.billToName || order?.name || 'friend';
+  }
+  function orderBillProfileId(order) {
+    return order?.billToProfileId || order?.profileId || null;
+  }
+  function orderBillAvatar(order) {
+    return order?.billToAvatar || order?.avatar || DEFAULT_AVATAR;
+  }
+  function orderCreditName(order) {
+    return order?.creditToName || order?.name || 'friend';
+  }
+  function orderCreditProfileId(order) {
+    return order?.creditToProfileId || order?.profileId || null;
+  }
+  function orderIsOutOfTeam(order) {
+    return Boolean(order?.billOutOfTeam ?? order?.outOfTeam);
+  }
   function orderTotal(state, order) {
     const base = order.items.reduce((s, it) => s + priceForItem(state, it), 0);
     // Out-of-team orderers pay a per-cup surcharge (snapshotted on the order).
-    const extra = order.outOfTeam ? outOfTeamSurcharge(state) * cupQty(order) : 0;
+    const extra = orderIsOutOfTeam(order) ? outOfTeamSurcharge(state) * cupQty(order) : 0;
     return base + extra;
   }
   function itemRoast(itemOrDrink) { return itemOrDrink?.roast || 'medium'; }
@@ -300,7 +318,9 @@
   }
   function orderBelongsToProfile(order, profile) {
     if (!order || !profile) return false;
-    return (order.profileId && order.profileId === profile.id) || order.name === profile.name;
+    const creditId = orderCreditProfileId(order);
+    const creditName = orderCreditName(order);
+    return (creditId && creditId === profile.id) || creditName === profile.name;
   }
   function cupQty(order) {
     return (order?.items || []).reduce((s, it) => s + (it.qty || 1), 0);
@@ -604,7 +624,9 @@
     DOW_TH, DOW_EN, DOW_EN_SHORT,
     load, save, isoToday, isoDate, isOpen, orderCutoffForDate, canOrderDate, addMonths, daysBetween,
     remoteConfig, remoteEnabled, pullRemoteState, pushRemoteState, confirmOrders, subscribeRemoteState, adoptRemoteState,
-    menuById, asapById, priceForItem, customerItemPrice, orderTotal, outOfTeamSurcharge, itemRoast, isAvailable, subscriptionCandidatesForTemplate, subscriptionTemplateAvailable, isConfirmedOrder, orderBelongsToProfile, cupQty, cupCountForProfile, itemLabel, itemColor,
+    menuById, asapById, priceForItem, customerItemPrice, orderTotal, outOfTeamSurcharge,
+    orderBillName, orderBillProfileId, orderBillAvatar, orderCreditName, orderCreditProfileId, orderIsOutOfTeam,
+    itemRoast, isAvailable, subscriptionCandidatesForTemplate, subscriptionTemplateAvailable, isConfirmedOrder, orderBelongsToProfile, cupQty, cupCountForProfile, itemLabel, itemColor,
     activeCode, setActiveCode, genCode, newProfile,
     getActiveProfile, upsertProfile, profileByCode,
     rankFor, nextRank,

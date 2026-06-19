@@ -110,10 +110,21 @@ function PeopleTab({ state, setState, profile }) {
         source: 'orders',
       };
     });
+    (state.orders || []).forEach((o) => {
+      const id = CTRLS.orderCreditProfileId(o);
+      if (!id || map[id]) return;
+      map[id] = {
+        id,
+        name: CTRLS.orderCreditName(o) || 'friend',
+        avatar: o.creditToAvatar || o.avatar || CTRLS.DEFAULT_AVATAR,
+        profile: null,
+        source: 'orders',
+      };
+    });
     return Object.values(map)
       .filter((p) => !(state.peopleMeta || {})[p.id]?.deleted)
       .map((p) => {
-        const orders = (state.orders || []).filter((o) => CTRLS.isConfirmedOrder(o) && o.profileId === p.id);
+        const orders = (state.orders || []).filter((o) => CTRLS.isConfirmedOrder(o) && CTRLS.orderBelongsToProfile(o, p));
         const cups = orders.reduce((s, o) => s + CTRLS.cupQty(o), 0);
         const spent = orders.reduce((s, o) => s + CTRLS.orderTotal(state, o), 0);
         const drinkMap = {};
@@ -231,9 +242,136 @@ function PeopleTab({ state, setState, profile }) {
   );
 }
 
+function peopleOptionsFromState(state) {
+  const map = {};
+  function put(id, name, avatar, outOfTeam, lineId) {
+    const key = id || name;
+    if (!key || !name) return;
+    if (!map[key]) map[key] = { id: id || null, name, avatar: avatar || CTRLS.DEFAULT_AVATAR, outOfTeam: !!outOfTeam, lineId: lineId || '' };
+    else map[key] = { ...map[key], id: map[key].id || id || null, avatar: map[key].avatar || avatar, outOfTeam: map[key].outOfTeam || !!outOfTeam, lineId: map[key].lineId || lineId || '' };
+  }
+  Object.values(state.profiles || {}).forEach((p) => put(p.id || p.code, p.name, p.avatar, p.outOfTeam, p.lineId));
+  (state.orders || []).forEach((o) => {
+    put(o.profileId, o.name, o.avatar, o.outOfTeam, o.lineId);
+    put(CTRLS.orderBillProfileId(o), CTRLS.orderBillName(o), CTRLS.orderBillAvatar(o), CTRLS.orderIsOutOfTeam(o), o.billLineId || o.lineId);
+    put(CTRLS.orderCreditProfileId(o), CTRLS.orderCreditName(o), o.creditToAvatar || o.avatar, false, '');
+  });
+  return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function findPersonOption(people, nameOrId) {
+  if (!nameOrId) return null;
+  return people.find((p) => p.id === nameOrId || p.name === nameOrId) || null;
+}
+
+function OrderEditSheet({ state, order, onSave, onCancelOrder, onClose }) {
+  const people = _umB(() => peopleOptionsFromState(state), [state.profiles, state.orders]);
+  const [billName, setBillName] = _usB(() => CTRLS.orderBillName(order));
+  const [creditName, setCreditName] = _usB(() => CTRLS.orderCreditName(order));
+  const [billPersonId, setBillPersonId] = _usB(() => CTRLS.orderBillProfileId(order) || '');
+  const [creditPersonId, setCreditPersonId] = _usB(() => CTRLS.orderCreditProfileId(order) || '');
+  const [billOutOfTeam, setBillOutOfTeam] = _usB(() => CTRLS.orderIsOutOfTeam(order));
+  const [lineId, setLineId] = _usB(() => order.billLineId || order.lineId || '');
+  const [note, setNote] = _usB(() => order.note || '');
+
+  function pickBill(p) {
+    setBillPersonId(p.id || '');
+    setBillName(p.name);
+    setBillOutOfTeam(!!p.outOfTeam);
+    setLineId(p.lineId || '');
+    if (!creditName || creditName === CTRLS.orderBillName(order)) pickCredit(p);
+  }
+  function pickCredit(p) {
+    setCreditPersonId(p.id || '');
+    setCreditName(p.name);
+  }
+  function save() {
+    const billPerson = findPersonOption(people, billPersonId) || findPersonOption(people, billName);
+    const creditPerson = findPersonOption(people, creditPersonId) || findPersonOption(people, creditName);
+    const cleanBillName = billName.trim() || order.name;
+    const cleanCreditName = creditName.trim() || cleanBillName;
+    const transferred = cleanBillName !== order.name || cleanCreditName !== order.name;
+    onSave({
+      ...order,
+      billToName: cleanBillName,
+      billToProfileId: billPerson?.id || null,
+      billToAvatar: billPerson?.avatar || order.avatar,
+      creditToName: cleanCreditName,
+      creditToProfileId: creditPerson?.id || null,
+      creditToAvatar: creditPerson?.avatar || order.avatar,
+      billOutOfTeam,
+      billLineId: billOutOfTeam ? lineId.trim() : '',
+      note: note.trim(),
+      transferFromName: transferred ? (order.transferFromName || order.name) : order.transferFromName,
+      transferEditedAt: Date.now(),
+    });
+    onClose();
+  }
+
+  const originalItems = (order.items || []).map((it) => CTRLS.itemLabel(state, it)).join(' · ');
+  const previewOrder = { ...order, billOutOfTeam };
+
+  return (
+    <div className="sheet-backdrop" onClick={onClose} style={{ zIndex: 120 }}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()} style={{ maxHeight: '92vh' }}>
+        <div className="sheet-handle" />
+        <div className="sheet-title">
+          <span className="h-doodle" style={{ fontSize: 26 }}>edit bill</span>
+          <button className="x-big" onClick={onClose}>×</button>
+        </div>
+        <div className="sheet-scroll no-scrollbar">
+          <div className="bill-edit-original">
+            <div className="mono dim">original order</div>
+            <div className="h-hand">{order.name} · {originalItems}</div>
+            <div className="mono dim">current total ฿{formatBaht(CTRLS.orderTotal(state, previewOrder))}</div>
+          </div>
+
+          <label className="field-label">bill to</label>
+          <input className="name-input" style={{ marginTop: 6 }} value={billName} onChange={(e) => { setBillName(e.target.value); setBillPersonId(''); }} placeholder="who pays" />
+          <div className="quick-person-row">
+            {people.slice(0, 16).map((p) => (
+              <button key={'bill-' + (p.id || p.name)} className={`btn-mini ${billPersonId && billPersonId === p.id ? 'active' : ''}`} onClick={() => pickBill(p)}>{p.name}</button>
+            ))}
+          </div>
+
+          <label className="field-label" style={{ marginTop: 14, display: 'block' }}>loyalty / history to</label>
+          <input className="name-input" style={{ marginTop: 6 }} value={creditName} onChange={(e) => { setCreditName(e.target.value); setCreditPersonId(''); }} placeholder="who gets the cup count" />
+          <div className="quick-person-row">
+            <button className="btn-mini" onClick={() => { setCreditName(billName); setCreditPersonId(billPersonId); }}>same as bill</button>
+            {people.slice(0, 12).map((p) => (
+              <button key={'credit-' + (p.id || p.name)} className={`btn-mini ${creditPersonId && creditPersonId === p.id ? 'active' : ''}`} onClick={() => pickCredit(p)}>{p.name}</button>
+            ))}
+          </div>
+
+          <div className="bill-edit-toggle">
+            <button className={`team-pill ${!billOutOfTeam ? 'on' : ''}`} onClick={() => setBillOutOfTeam(false)}>team bill</button>
+            <button className={`team-pill ${billOutOfTeam ? 'on' : ''}`} onClick={() => setBillOutOfTeam(true)}>outside bill</button>
+          </div>
+          {billOutOfTeam && (
+            <input className="setting-input" value={lineId} onChange={(e) => setLineId(e.target.value)} placeholder="LINE ID / contact" />
+          )}
+
+          <label className="field-label" style={{ marginTop: 14, display: 'block' }}>note</label>
+          <textarea className="setting-input" rows="2" value={note} onChange={(e) => setNote(e.target.value)} placeholder="cancelled, resold, cash note..." />
+        </div>
+        <div className="sheet-foot">
+          <button className="btn-primary" disabled={!billName.trim() || !creditName.trim()} onClick={save}>save changes →</button>
+          <button className="btn-mini danger" style={{ width: '100%', marginTop: 8 }} onClick={() => {
+            if (!confirm('Cancel this order and remove it from billing?')) return;
+            onCancelOrder(order);
+            onClose();
+          }}>cancel order · remove from bill</button>
+          <div className="footnote mono">cancelled orders disappear from queue, summary, billing, and cup count</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // === Queue (confirmed orders only) ===
 function QueueTab({ state, setState }) {
   const [filter, setFilter] = _usB(CTRLS.isoToday());
+  const [editingOrder, setEditingOrder] = _usB(null);
 
   const allDates = _umB(() => {
     const today = CTRLS.isoToday();
@@ -245,7 +383,7 @@ function QueueTab({ state, setState }) {
   }, [state.orders]);
 
   const orders = state.orders.filter((o) => CTRLS.isConfirmedOrder(o) && o.date === filter).sort((a, b) => a.ts - b.ts);
-  const totalCups = orders.reduce((s, o) => s + o.items.length, 0);
+  const totalCups = orders.reduce((s, o) => s + CTRLS.cupQty(o), 0);
   const totalBaht = orders.reduce((s, o) => s + CTRLS.orderTotal(state, o), 0);
 
   // Aggregate drinks for prep list
@@ -255,7 +393,7 @@ function QueueTab({ state, setState }) {
       const label = CTRLS.itemLabel(state, it);
       const color = CTRLS.itemColor(state, it);
       if (!map[label]) map[label] = { label, color, count: 0 };
-      map[label].count++;
+      map[label].count += it.qty || 1;
     }));
     return Object.values(map).sort((a, b) => b.count - a.count);
   }, [orders, state]);
@@ -325,23 +463,47 @@ function QueueTab({ state, setState }) {
                     {o.source === 'gift' && <span style={{ color: 'var(--sage)' }}> · gift{o.gifterName ? ` from ${o.gifterName}` : ''}</span>}
                     {o.note ? <span style={{ color: 'var(--terracotta)' }}> · {o.note}</span> : null}
                   </div>
-                  {o.outOfTeam && (
+                  {(CTRLS.orderBillName(o) !== o.name || CTRLS.orderCreditName(o) !== o.name) && (
                     <div className="mono lineid-badge">
-                      นอกทีม +฿{CTRLS.outOfTeamSurcharge(state) * CTRLS.cupQty(o)}{o.lineId ? ` · LINE: ${o.lineId}` : ' · ไม่มี LINE ID'}
+                      bill: {CTRLS.orderBillName(o)} · points: {CTRLS.orderCreditName(o)}
+                      {o.transferFromName ? ` · from ${o.transferFromName}` : ''}
+                    </div>
+                  )}
+                  {CTRLS.orderIsOutOfTeam(o) && (
+                    <div className="mono lineid-badge">
+                      นอกทีม +฿{CTRLS.outOfTeamSurcharge(state) * CTRLS.cupQty(o)}{(o.billLineId || o.lineId) ? ` · LINE: ${o.billLineId || o.lineId}` : ' · ไม่มี LINE ID'}
                     </div>
                   )}
                 </div>
                 <div className="mono dim" style={{ fontSize: 12 }}>฿{CTRLS.orderTotal(state, o)}</div>
                 <button
+                  className="btn-mini"
+                  style={{ flexShrink: 0 }}
+                  title="edit bill"
+                  onClick={() => setEditingOrder(o)}
+                >edit</button>
+                <button
                   className="x"
                   style={{ color: 'var(--terracotta)', marginLeft: 6, flexShrink: 0 }}
                   title="remove order"
-                  onClick={() => setState({ ...state, orders: state.orders.filter((x) => x.id !== o.id) })}
+                  onClick={() => {
+                    if (!confirm('Cancel this order and remove it from billing?')) return;
+                    setState({ ...state, orders: state.orders.map((x) => x.id === o.id ? { ...x, status: 'cancelled', paid: 'cancelled', cancelledAt: Date.now() } : x) });
+                  }}
                 >×</button>
               </div>
             ))}
           </div>
         </>
+      )}
+      {editingOrder && (
+        <OrderEditSheet
+          state={state}
+          order={editingOrder}
+          onClose={() => setEditingOrder(null)}
+          onSave={(next) => setState({ ...state, orders: state.orders.map((x) => x.id === next.id ? next : x) })}
+          onCancelOrder={(o) => setState({ ...state, orders: state.orders.map((x) => x.id === o.id ? { ...x, status: 'cancelled', paid: 'cancelled', cancelledAt: Date.now() } : x) })}
+        />
       )}
     </div>
   );
@@ -376,22 +538,41 @@ function BillingTab({ state }) {
   }
 
   const billing = _umB(() => {
-    const map = {};
+    const buckets = { team: {}, outside: {} };
     state.orders
       .filter((o) => CTRLS.isConfirmedOrder(o) && weekDates.includes(o.date))
       .forEach((o) => {
-        if (!map[o.name]) {
-          map[o.name] = { name: o.name, avatar: o.avatar, total: 0, cups: 0, orderCount: 0 };
+        const bucket = CTRLS.orderIsOutOfTeam(o) ? 'outside' : 'team';
+        const key = CTRLS.orderBillProfileId(o) || CTRLS.orderBillName(o);
+        if (!buckets[bucket][key]) {
+          buckets[bucket][key] = {
+            key,
+            name: CTRLS.orderBillName(o),
+            avatar: CTRLS.orderBillAvatar(o),
+            total: 0,
+            cups: 0,
+            orderCount: 0,
+            lines: [],
+            lineId: o.billLineId || o.lineId || '',
+          };
         }
-        map[o.name].total += CTRLS.orderTotal(state, o);
-        map[o.name].cups += o.items.length;
-        map[o.name].orderCount++;
+        buckets[bucket][key].total += CTRLS.orderTotal(state, o);
+        buckets[bucket][key].cups += CTRLS.cupQty(o);
+        buckets[bucket][key].orderCount++;
+        buckets[bucket][key].lines.push(o);
       });
-    return Object.values(map).sort((a, b) => b.total - a.total);
+    return {
+      team: Object.values(buckets.team).sort((a, b) => b.total - a.total),
+      outside: Object.values(buckets.outside).sort((a, b) => b.total - a.total),
+    };
   }, [state.orders, weekDates]);
 
-  const grandTotal = billing.reduce((s, p) => s + p.total, 0);
-  const grandCups = billing.reduce((s, p) => s + p.cups, 0);
+  const teamTotal = billing.team.reduce((s, p) => s + p.total, 0);
+  const teamCups = billing.team.reduce((s, p) => s + p.cups, 0);
+  const outsideTotal = billing.outside.reduce((s, p) => s + p.total, 0);
+  const outsideCups = billing.outside.reduce((s, p) => s + p.cups, 0);
+  const grandTotal = teamTotal + outsideTotal;
+  const grandCups = teamCups + outsideCups;
 
   const weekLabel = (() => {
     const sd = shortDate(weekDates[0]);
@@ -405,11 +586,47 @@ function BillingTab({ state }) {
     lines.push(`────────────────────`);
     lines.push(`${grandCups} cups · ฿${formatBaht(grandTotal)} total`);
     lines.push('');
-    billing.forEach((p) => lines.push(`${p.name}: ฿${formatBaht(p.total)} (${p.cups} cup${p.cups !== 1 ? 's' : ''})`));
+    lines.push(`TEAM · ฿${formatBaht(teamTotal)}`);
+    if (!billing.team.length) lines.push(`  (none)`);
+    billing.team.forEach((p) => lines.push(`  • ${p.name}: ฿${formatBaht(p.total)} (${p.cups} cup${p.cups !== 1 ? 's' : ''})`));
+    lines.push('');
+    lines.push(`OUTSIDE · ฿${formatBaht(outsideTotal)}`);
+    if (!billing.outside.length) lines.push(`  (none)`);
+    billing.outside.forEach((p) => lines.push(`  • ${p.name}: ฿${formatBaht(p.total)} (${p.cups} cup${p.cups !== 1 ? 's' : ''})${p.lineId ? ` · LINE: ${p.lineId}` : ''}`));
     if (await copyText(lines.join('\n'))) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     }
+  }
+
+  function renderBillingSection(title, people, total, cups) {
+    return (
+      <div className="billing-section">
+        <div className="billing-section-head">
+          <span className="mono dim">{title}</span>
+          <span className="h-hand">฿{formatBaht(total)} · {cups} cup{cups !== 1 ? 's' : ''}</span>
+        </div>
+        {people.length === 0 ? (
+          <div className="mono dim" style={{ padding: '10px 16px' }}>nothing here</div>
+        ) : (
+          <div className="billing-list">
+            {people.map((p) => (
+              <div key={p.key} className="billing-row">
+                <CatAvatar avatar={p.avatar || { body: 'beige', expression: 'happy' }} size={36} />
+                <div className="billing-mid">
+                  <div className="h-hand" style={{ fontSize: 15, lineHeight: 1.1 }}>{p.name}</div>
+                  <div className="mono dim" style={{ fontSize: 11 }}>
+                    {p.cups} cup{p.cups !== 1 ? 's' : ''} · {p.orderCount} order{p.orderCount !== 1 ? 's' : ''}
+                    {p.lineId ? ` · LINE: ${p.lineId}` : ''}
+                  </div>
+                </div>
+                <div className="h-doodle" style={{ fontSize: 26, color: 'var(--terracotta)' }}>฿{formatBaht(p.total)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -420,7 +637,7 @@ function BillingTab({ state }) {
         <button className="nav-btn" onClick={() => bumpWeek(1)}>›</button>
       </div>
 
-      {billing.length === 0 ? (
+      {billing.team.length === 0 && billing.outside.length === 0 ? (
         <div className="empty-state">
           <CatSleepy size={80} />
           <div className="h-hand" style={{ fontSize: 18 }}>nothing to collect</div>
@@ -431,21 +648,13 @@ function BillingTab({ state }) {
           <div className="billing-summary">
             <div className="mono dim" style={{ fontSize: 11, marginBottom: 4 }}>to collect this week</div>
             <div className="h-doodle" style={{ fontSize: 44, color: 'var(--terracotta)', lineHeight: 1 }}>฿{formatBaht(grandTotal)}</div>
-            <div className="mono dim" style={{ marginTop: 4 }}>{grandCups} cups · {billing.length} person{billing.length !== 1 ? 's' : ''}</div>
+            <div className="mono dim" style={{ marginTop: 4 }}>
+              team ฿{formatBaht(teamTotal)} · outside ฿{formatBaht(outsideTotal)} · {grandCups} cups
+            </div>
           </div>
 
-          <div className="billing-list">
-            {billing.map((p) => (
-              <div key={p.name} className="billing-row">
-                <CatAvatar avatar={p.avatar || { body: 'beige', expression: 'happy' }} size={36} />
-                <div className="billing-mid">
-                  <div className="h-hand" style={{ fontSize: 15, lineHeight: 1.1 }}>{p.name}</div>
-                  <div className="mono dim" style={{ fontSize: 11 }}>{p.cups} cup{p.cups !== 1 ? 's' : ''} · {p.orderCount} order{p.orderCount !== 1 ? 's' : ''}</div>
-                </div>
-                <div className="h-doodle" style={{ fontSize: 26, color: 'var(--terracotta)' }}>฿{formatBaht(p.total)}</div>
-              </div>
-            ))}
-          </div>
+          {renderBillingSection('team collection', billing.team, teamTotal, teamCups)}
+          {renderBillingSection('outside collection', billing.outside, outsideTotal, outsideCups)}
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '12px 16px 0' }}>
             <button className={`copy-btn ${copied ? 'copied' : ''}`} onClick={copyBilling}>{copied ? '✓ copied' : '📋 copy list'}</button>
@@ -469,16 +678,16 @@ function SummaryTab({ state }) {
   const allOrders = state.orders.filter((o) => o.date === target && CTRLS.isConfirmedOrder(o)).sort((a, b) => a.ts - b.ts);
   // Team summary goes to the internal group chat → exclude out-of-team folks;
   // they bill individually, so they get their own separate list.
-  const orders = allOrders.filter((o) => !o.outOfTeam);
-  const outOrders = allOrders.filter((o) => o.outOfTeam);
-  const totalCups = orders.reduce((s, o) => s + o.items.length, 0);
+  const orders = allOrders.filter((o) => !CTRLS.orderIsOutOfTeam(o));
+  const outOrders = allOrders.filter((o) => CTRLS.orderIsOutOfTeam(o));
+  const totalCups = orders.reduce((s, o) => s + CTRLS.cupQty(o), 0);
   const totalBaht = orders.reduce((s, o) => s + CTRLS.orderTotal(state, o), 0);
 
   // Aggregate by drink name for prep count (team only)
   const drinkCount = {};
   orders.forEach((o) => o.items.forEach((it) => {
     const label = CTRLS.itemLabel(state, it);
-    drinkCount[label] = (drinkCount[label] || 0) + 1;
+    drinkCount[label] = (drinkCount[label] || 0) + (it.qty || 1);
   }));
 
   const sd = shortDate(target);
@@ -497,12 +706,13 @@ function SummaryTab({ state }) {
   orders.forEach((o) => {
     const items = o.items.map((it) => CTRLS.itemLabel(state, it)).join(', ');
     const tag = (o.source === 'gift' ? ` 🎁${o.gifterName ? ' from ' + o.gifterName : ''}` : o.source === 'subscription' ? ' 📌' : '');
-    lines.push(`  • ${o.name}: ${items}${tag}`);
+    const billNote = CTRLS.orderBillName(o) !== o.name ? ` · bill ${CTRLS.orderBillName(o)}` : '';
+    lines.push(`  • ${CTRLS.orderCreditName(o)}: ${items}${tag}${billNote}`);
   });
   const summaryText = lines.join('\n');
 
   // Separate out-of-team list — billed individually (with LINE IDs)
-  const outCups = outOrders.reduce((s, o) => s + o.items.length, 0);
+  const outCups = outOrders.reduce((s, o) => s + CTRLS.cupQty(o), 0);
   const outBaht = outOrders.reduce((s, o) => s + CTRLS.orderTotal(state, o), 0);
   const outLines = [];
   outLines.push(`🧾 OUT-OF-TEAM — ${sd.dow} ${sd.day} ${sd.monLong}`);
@@ -511,8 +721,9 @@ function SummaryTab({ state }) {
   outLines.push('');
   outOrders.forEach((o) => {
     const items = o.items.map((it) => CTRLS.itemLabel(state, it)).join(', ');
-    const line = o.lineId ? ` · LINE: ${o.lineId}` : ' · no LINE ID';
-    outLines.push(`  • ${o.name}: ${items} · ฿${formatBaht(CTRLS.orderTotal(state, o))}${line}`);
+    const line = (o.billLineId || o.lineId) ? ` · LINE: ${o.billLineId || o.lineId}` : ' · no LINE ID';
+    const credit = CTRLS.orderCreditName(o) !== CTRLS.orderBillName(o) ? ` · points: ${CTRLS.orderCreditName(o)}` : '';
+    outLines.push(`  • ${CTRLS.orderBillName(o)}: ${items} · ฿${formatBaht(CTRLS.orderTotal(state, o))}${line}${credit}`);
   });
   const outText = outLines.join('\n');
 
