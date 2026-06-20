@@ -7578,9 +7578,7 @@ function findPersonOption(people, nameOrId) {
 function OrderEditSheet({ state, order, onSave, onCancelOrder, onClose }) {
   const people = _umB(() => peopleOptionsFromState(state), [state.profiles, state.orders]);
   const [billName, setBillName] = _usB(() => CTRLS.orderBillName(order));
-  const [creditName, setCreditName] = _usB(() => CTRLS.orderCreditName(order));
   const [billPersonId, setBillPersonId] = _usB(() => CTRLS.orderBillProfileId(order) || '');
-  const [creditPersonId, setCreditPersonId] = _usB(() => CTRLS.orderCreditProfileId(order) || '');
   const [billOutOfTeam, setBillOutOfTeam] = _usB(() => CTRLS.orderIsOutOfTeam(order));
   const [lineId, setLineId] = _usB(() => order.billLineId || order.lineId || '');
   const [note, setNote] = _usB(() => order.note || '');
@@ -7590,26 +7588,19 @@ function OrderEditSheet({ state, order, onSave, onCancelOrder, onClose }) {
     setBillName(p.name);
     setBillOutOfTeam(!!p.outOfTeam);
     setLineId(p.lineId || '');
-    if (!creditName || creditName === CTRLS.orderBillName(order)) pickCredit(p);
-  }
-  function pickCredit(p) {
-    setCreditPersonId(p.id || '');
-    setCreditName(p.name);
   }
   function save() {
     const billPerson = findPersonOption(people, billPersonId) || findPersonOption(people, billName);
-    const creditPerson = findPersonOption(people, creditPersonId) || findPersonOption(people, creditName);
     const cleanBillName = billName.trim() || order.name;
-    const cleanCreditName = creditName.trim() || cleanBillName;
-    const transferred = cleanBillName !== order.name || cleanCreditName !== order.name;
+    const transferred = cleanBillName !== order.name;
     onSave({
       ...order,
       billToName: cleanBillName,
       billToProfileId: billPerson?.id || null,
       billToAvatar: billPerson?.avatar || order.avatar,
-      creditToName: cleanCreditName,
-      creditToProfileId: creditPerson?.id || null,
-      creditToAvatar: creditPerson?.avatar || order.avatar,
+      creditToName: cleanBillName,
+      creditToProfileId: billPerson?.id || null,
+      creditToAvatar: billPerson?.avatar || order.avatar,
       billOutOfTeam,
       billLineId: billOutOfTeam ? lineId.trim() : '',
       note: note.trim(),
@@ -7644,15 +7635,7 @@ function OrderEditSheet({ state, order, onSave, onCancelOrder, onClose }) {
               <button key={'bill-' + (p.id || p.name)} className={`btn-mini ${billPersonId && billPersonId === p.id ? 'active' : ''}`} onClick={() => pickBill(p)}>{p.name}</button>
             ))}
           </div>
-
-          <label className="field-label" style={{ marginTop: 14, display: 'block' }}>loyalty / history to</label>
-          <input className="name-input" style={{ marginTop: 6 }} value={creditName} onChange={(e) => { setCreditName(e.target.value); setCreditPersonId(''); }} placeholder="who gets the cup count" />
-          <div className="quick-person-row">
-            <button className="btn-mini" onClick={() => { setCreditName(billName); setCreditPersonId(billPersonId); }}>same as bill</button>
-            {people.slice(0, 12).map((p) => (
-              <button key={'credit-' + (p.id || p.name)} className={`btn-mini ${creditPersonId && creditPersonId === p.id ? 'active' : ''}`} onClick={() => pickCredit(p)}>{p.name}</button>
-            ))}
-          </div>
+          <div className="footnote mono" style={{ paddingTop: 6 }}>loyalty and history follow whoever pays</div>
 
           <div className="bill-edit-toggle">
             <button className={`team-pill ${!billOutOfTeam ? 'on' : ''}`} onClick={() => setBillOutOfTeam(false)}>team bill</button>
@@ -7666,7 +7649,7 @@ function OrderEditSheet({ state, order, onSave, onCancelOrder, onClose }) {
           <textarea className="setting-input" rows="2" value={note} onChange={(e) => setNote(e.target.value)} placeholder="cancelled, resold, cash note..." />
         </div>
         <div className="sheet-foot">
-          <button className="btn-primary" disabled={!billName.trim() || !creditName.trim()} onClick={save}>save changes →</button>
+          <button className="btn-primary" disabled={!billName.trim()} onClick={save}>save changes →</button>
           <button className="btn-mini danger" style={{ width: '100%', marginTop: 8 }} onClick={() => {
             if (!confirm('Cancel this order and remove it from billing?')) return;
             onCancelOrder(order);
@@ -7679,10 +7662,127 @@ function OrderEditSheet({ state, order, onSave, onCancelOrder, onClose }) {
   );
 }
 
+function BaristaOrderSheet({ state, setState, dateIso, onClose }) {
+  const people = _umB(() => peopleOptionsFromState(state), [state.profiles, state.orders]);
+  const [name, setName] = _usB('');
+  const [personId, setPersonId] = _usB('');
+  const [date, setDate] = _usB(dateIso || CTRLS.isoToday());
+  const [items, setItems] = _usB([]);
+  const [picking, setPicking] = _usB(false);
+  const [outOfTeam, setOutOfTeam] = _usB(false);
+  const [lineId, setLineId] = _usB('');
+  const [note, setNote] = _usB('added by barista');
+
+  const selectedPerson = findPersonOption(people, personId) || findPersonOption(people, name);
+  const previewOrder = { items, outOfTeam, billOutOfTeam: outOfTeam };
+  const total = CTRLS.orderTotal(state, previewOrder);
+
+  function pickPerson(p) {
+    setPersonId(p.id || '');
+    setName(p.name);
+    setOutOfTeam(!!p.outOfTeam);
+    setLineId(p.lineId || '');
+  }
+  function save() {
+    const cleanName = name.trim();
+    if (!cleanName || !items.length) return;
+    const person = selectedPerson || {};
+    const avatar = person.avatar || CTRLS.DEFAULT_AVATAR;
+    const order = {
+      id: 'bar_' + Date.now() + Math.random().toString(36).slice(2, 6),
+      name: cleanName,
+      profileId: person.id || null,
+      avatar,
+      date,
+      items,
+      status: 'queued',
+      paid: 'confirmed',
+      source: 'barista',
+      billToName: cleanName,
+      billToProfileId: person.id || null,
+      billToAvatar: avatar,
+      creditToName: cleanName,
+      creditToProfileId: person.id || null,
+      creditToAvatar: avatar,
+      outOfTeam,
+      billOutOfTeam: outOfTeam,
+      lineId: outOfTeam ? lineId.trim() : '',
+      billLineId: outOfTeam ? lineId.trim() : '',
+      note: note.trim(),
+      ts: Date.now(),
+    };
+    setState({ ...state, orders: [...state.orders, order] });
+    onClose();
+  }
+
+  return (
+    <div className="sheet-backdrop" onClick={onClose} style={{ zIndex: 115 }}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()} style={{ maxHeight: '92vh' }}>
+        <div className="sheet-handle" />
+        <div className="sheet-title">
+          <span className="h-doodle" style={{ fontSize: 26 }}>add order</span>
+          <button className="x-big" onClick={onClose}>×</button>
+        </div>
+        <div className="sheet-scroll no-scrollbar">
+          <label className="field-label">who pays / gets points</label>
+          <input className="name-input" style={{ marginTop: 6 }} value={name} onChange={(e) => { setName(e.target.value); setPersonId(''); }} placeholder="name" />
+          <div className="quick-person-row">
+            {people.slice(0, 16).map((p) => (
+              <button key={'manual-' + (p.id || p.name)} className={`btn-mini ${personId && personId === p.id ? 'active' : ''}`} onClick={() => pickPerson(p)}>{p.name}</button>
+            ))}
+          </div>
+
+          <label className="field-label" style={{ marginTop: 14, display: 'block' }}>day</label>
+          <input className="setting-input" type="date" value={date} style={{ marginTop: 6 }} onChange={(e) => setDate(e.target.value)} />
+          <div className="footnote mono" style={{ paddingTop: 6 }}>barista orders bypass the customer cutoff</div>
+
+          <label className="field-label" style={{ marginTop: 14, display: 'block' }}>cups</label>
+          {items.map((it, i) => (
+            <div key={i} className="cart-line">
+              <span className="h-hand" style={{ flex: 1 }}>{CTRLS.itemLabel(state, it)}</span>
+              <span className="mono dim">฿{CTRLS.priceForItem(state, it)}</span>
+              <button className="x" onClick={() => setItems((arr) => arr.filter((_, idx) => idx !== i))}>×</button>
+            </div>
+          ))}
+          <button className="edit-btn" style={{ width: '100%', marginTop: 6 }} onClick={() => setPicking(true)}>＋ add a cup</button>
+
+          <div className="bill-edit-toggle">
+            <button className={`team-pill ${!outOfTeam ? 'on' : ''}`} onClick={() => setOutOfTeam(false)}>team bill</button>
+            <button className={`team-pill ${outOfTeam ? 'on' : ''}`} onClick={() => setOutOfTeam(true)}>outside bill</button>
+          </div>
+          {outOfTeam && (
+            <input className="setting-input" value={lineId} onChange={(e) => setLineId(e.target.value)} placeholder="LINE ID / contact" />
+          )}
+
+          <label className="field-label" style={{ marginTop: 14, display: 'block' }}>note</label>
+          <textarea className="setting-input" rows="2" value={note} onChange={(e) => setNote(e.target.value)} placeholder="late order, morning add-on..." />
+
+          {picking && (
+            <PickItemSheet
+              state={state}
+              onPick={(it) => { setItems((arr) => [...arr, it]); setPicking(false); }}
+              onClose={() => setPicking(false)}
+            />
+          )}
+        </div>
+        <div className="sheet-foot">
+          <div className="total-row">
+            <span className="h-hand">total <span className="mono dim" style={{ fontSize: 10 }}>· collect manually</span></span>
+            <span className="h-doodle" style={{ fontSize: 28 }}>฿{formatBaht(total)}</span>
+          </div>
+          <button className="btn-primary" disabled={!name.trim() || !items.length} onClick={save}>add to queue →</button>
+          <div className="footnote mono">shows in queue, summary, billing, and cup count immediately</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // === Queue (confirmed orders only) ===
 function QueueTab({ state, setState }) {
   const [filter, setFilter] = _usB(CTRLS.isoToday());
   const [editingOrder, setEditingOrder] = _usB(null);
+  const [addingOrder, setAddingOrder] = _usB(false);
 
   const allDates = _umB(() => {
     const today = CTRLS.isoToday();
@@ -7727,6 +7827,10 @@ function QueueTab({ state, setState }) {
           );
         })}
       </div>
+
+      <button className="edit-btn" style={{ width: '100%', marginBottom: 12 }} onClick={() => setAddingOrder(true)}>
+        ＋ add order as barista
+      </button>
 
       {orders.length === 0 ? (
         <div className="empty-state">
@@ -7814,6 +7918,14 @@ function QueueTab({ state, setState }) {
           onClose={() => setEditingOrder(null)}
           onSave={(next) => setState({ ...state, orders: state.orders.map((x) => x.id === next.id ? next : x) })}
           onCancelOrder={(o) => setState({ ...state, orders: state.orders.map((x) => x.id === o.id ? { ...x, status: 'cancelled', paid: 'cancelled', cancelledAt: Date.now() } : x) })}
+        />
+      )}
+      {addingOrder && (
+        <BaristaOrderSheet
+          state={state}
+          setState={setState}
+          dateIso={filter}
+          onClose={() => setAddingOrder(false)}
         />
       )}
     </div>
