@@ -864,6 +864,20 @@ input, textarea, select { font: inherit; color: inherit; }
   border-radius: 14px;
   padding: 12px;
 }
+.people-merge-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--mustard-soft);
+  border: 1px dashed var(--mustard);
+  border-radius: 14px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.people-merge-card .btn-mini {
+  flex-shrink: 0;
+}
 .people-list {
   display: flex;
   flex-direction: column;
@@ -7466,6 +7480,16 @@ function PeopleTab({ state, setState, profile }) {
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {}), [people]);
+  const duplicateGroups = _umB(() => {
+    const groups = {};
+    people.forEach((p) => {
+      const key = normalizedName(p.name);
+      if (!key) return;
+      groups[key] = [...(groups[key] || []), p];
+    });
+    return Object.values(groups).filter((g) => g.length > 1);
+  }, [people]);
+  const duplicateExtraCount = duplicateGroups.reduce((s, g) => s + g.length - 1, 0);
   const visibleCount = people.filter((p) => !p.hiddenFromGift).length;
   const hiddenCount = people.length - visibleCount;
 
@@ -7495,6 +7519,130 @@ function PeopleTab({ state, setState, profile }) {
     });
   }
 
+  function mergeDuplicatePeople() {
+    if (!duplicateGroups.length) return;
+    const preview = duplicateGroups
+      .map((g) => `${g[0].name}: ${g.length} profiles → 1`)
+      .join('\n');
+    if (!confirm(`Merge duplicate names?\n\n${preview}\n\nOrders, bills, points, gifts, and subscriptions will move to the main profile.`)) return;
+
+    const activeCode = CTRLS.activeCode();
+    const keepForGroup = (group) => [...group].sort((a, b) => {
+      if (a.id === activeCode) return -1;
+      if (b.id === activeCode) return 1;
+      if (a.profile && !b.profile) return -1;
+      if (b.profile && !a.profile) return 1;
+      return (b.cups - a.cups) || (b.orders.length - a.orders.length) || String(a.id).localeCompare(String(b.id));
+    })[0];
+    const keepers = duplicateGroups.map((group) => ({ keep: keepForGroup(group), group }));
+    const nextActive = keepers.find(({ group }) => group.some((p) => p.id === activeCode))?.keep?.id || activeCode;
+
+    setState((s) => {
+      const profiles = { ...(s.profiles || {}) };
+      const peopleMeta = { ...(s.peopleMeta || {}) };
+      const aliasById = {};
+      const keeperByName = {};
+
+      keepers.forEach(({ keep, group }) => {
+        const key = normalizedName(keep.name);
+        keeperByName[key] = {
+          id: keep.id,
+          name: keep.name,
+          avatar: keep.avatar || CTRLS.DEFAULT_AVATAR,
+          outOfTeam: !!(keep.profile?.outOfTeam),
+          lineId: keep.profile?.lineId || '',
+        };
+        group.forEach((p) => {
+          if (p.id !== keep.id) aliasById[p.id] = keep.id;
+        });
+
+        const mergedProfiles = group.map((p) => profiles[p.id]).filter(Boolean);
+        const keepProfile = profiles[keep.id] || keep.profile || null;
+        if (keepProfile) {
+          const orderIds = Array.from(new Set(mergedProfiles.flatMap((p) => p.orderIds || [])));
+          profiles[keep.id] = {
+            ...keepProfile,
+            name: keep.name,
+            avatar: keepProfile.avatar || keep.avatar || CTRLS.DEFAULT_AVATAR,
+            cupCount: Math.max(keepProfile.cupCount || 0, ...mergedProfiles.map((p) => p.cupCount || 0)),
+            orderIds,
+            outOfTeam: mergedProfiles.some((p) => p.outOfTeam),
+            lineId: keepProfile.lineId || mergedProfiles.find((p) => p.lineId)?.lineId || '',
+          };
+        }
+
+        group.forEach((p) => {
+          if (p.id === keep.id) return;
+          delete profiles[p.id];
+          peopleMeta[p.id] = {
+            ...((s.peopleMeta || {})[p.id] || {}),
+            deleted: true,
+            hiddenFromGift: true,
+            mergedInto: keep.id,
+            mergedAt: Date.now(),
+          };
+        });
+        peopleMeta[keep.id] = {
+          ...((s.peopleMeta || {})[keep.id] || {}),
+          deleted: false,
+        };
+      });
+
+      function keeperFor(id, name) {
+        const nextId = aliasById[id] || id;
+        if (nextId && profiles[nextId]) {
+          const p = profiles[nextId];
+          return { id: nextId, name: p.name || name, avatar: p.avatar || CTRLS.DEFAULT_AVATAR };
+        }
+        const byName = keeperByName[normalizedName(name)];
+        if (byName) return byName;
+        return null;
+      }
+
+      const orders = (s.orders || []).map((o) => {
+        const next = { ...o };
+        const owner = keeperFor(o.profileId, o.name);
+        if (owner) {
+          next.profileId = owner.id;
+          next.name = owner.name;
+          next.avatar = owner.avatar;
+        }
+        const bill = keeperFor(CTRLS.orderBillProfileId(next), CTRLS.orderBillName(next));
+        if (bill) {
+          next.billToProfileId = bill.id;
+          next.billToName = bill.name;
+          next.billToAvatar = bill.avatar;
+        }
+        const credit = keeperFor(CTRLS.orderCreditProfileId(next), CTRLS.orderCreditName(next));
+        if (credit) {
+          next.creditToProfileId = credit.id;
+          next.creditToName = credit.name;
+          next.creditToAvatar = credit.avatar;
+        }
+        return next;
+      });
+
+      const subscriptions = (s.subscriptions || []).map((sub) => {
+        const owner = keeperFor(sub.profileId, sub.name);
+        return owner ? { ...sub, profileId: owner.id, name: owner.name } : sub;
+      });
+
+      const gifts = (s.gifts || []).map((gift) => {
+        const from = keeperFor(gift.fromProfileId, gift.fromName);
+        const to = keeperFor(gift.toProfileId, gift.toName);
+        return {
+          ...gift,
+          ...(from ? { fromProfileId: from.id, fromName: from.name, fromAvatar: from.avatar } : {}),
+          ...(to ? { toProfileId: to.id, toName: to.name } : {}),
+        };
+      });
+
+      return { ...s, profiles, peopleMeta, orders, subscriptions, gifts };
+    });
+
+    if (nextActive && nextActive !== activeCode) CTRLS.setActiveCode(nextActive);
+  }
+
   return (
     <div>
       <div className="people-summary">
@@ -7511,6 +7659,16 @@ function PeopleTab({ state, setState, profile }) {
           <div className="mono dim">hidden</div>
         </div>
       </div>
+
+      {duplicateGroups.length > 0 && (
+        <div className="people-merge-card">
+          <div>
+            <div className="h-hand" style={{ fontSize: 17 }}>duplicate names found</div>
+            <div className="mono dim">{duplicateGroups.length} name group{duplicateGroups.length !== 1 ? 's' : ''} · {duplicateExtraCount} extra profile{duplicateExtraCount !== 1 ? 's' : ''}</div>
+          </div>
+          <button className="btn-mini" onClick={mergeDuplicatePeople}>merge duplicates</button>
+        </div>
+      )}
 
       {people.length === 0 ? (
         <div className="empty-state">

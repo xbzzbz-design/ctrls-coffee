@@ -736,6 +736,20 @@
   border-radius: 14px;
   padding: 12px;
 }
+.people-merge-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--mustard-soft);
+  border: 1px dashed var(--mustard);
+  border-radius: 14px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.people-merge-card .btn-mini {
+  flex-shrink: 0;
+}
 .people-list {
   display: flex;
   flex-direction: column;
