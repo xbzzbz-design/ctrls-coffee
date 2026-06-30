@@ -149,6 +149,12 @@ function PeopleTab({ state, setState, profile }) {
       .sort((a, b) => b.cups - a.cups || a.name.localeCompare(b.name));
   }, [state.profiles, state.orders, state.peopleMeta, profile.id]);
 
+  const normalizedName = (name) => (name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  const duplicateNameCounts = _umB(() => people.reduce((acc, p) => {
+    const key = normalizedName(p.name);
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {}), [people]);
   const visibleCount = people.filter((p) => !p.hiddenFromGift).length;
   const hiddenCount = people.length - visibleCount;
 
@@ -210,6 +216,7 @@ function PeopleTab({ state, setState, profile }) {
                 <div className="people-mid">
                   <div className="people-name-row">
                     <span className="h-hand" style={{ fontSize: 18 }}>{p.name}</span>
+                    {duplicateNameCounts[normalizedName(p.name)] > 1 && <span className="people-tag mono">{String(p.id).replace(/^CAT-/, '')}</span>}
                     {p.isCurrent && <span className="people-tag mono">you</span>}
                     {p.source === 'orders' && <span className="people-tag mono">order-only</span>}
                     {p.hiddenFromGift && <span className="people-tag muted mono">hidden</span>}
@@ -244,10 +251,12 @@ function PeopleTab({ state, setState, profile }) {
 
 function peopleOptionsFromState(state) {
   const map = {};
+  const norm = (name) => (name || '').trim().replace(/\s+/g, ' ').toLowerCase();
   function put(id, name, avatar, outOfTeam, lineId) {
-    const key = id || name;
-    if (!key || !name) return;
-    if (!map[key]) map[key] = { id: id || null, name, avatar: avatar || CTRLS.DEFAULT_AVATAR, outOfTeam: !!outOfTeam, lineId: lineId || '' };
+    const cleanName = (name || '').trim();
+    const key = id ? `id:${id}` : `name:${norm(cleanName)}`;
+    if (!key || !cleanName) return;
+    if (!map[key]) map[key] = { key, id: id || null, name: cleanName, avatar: avatar || CTRLS.DEFAULT_AVATAR, outOfTeam: !!outOfTeam, lineId: lineId || '' };
     else map[key] = { ...map[key], id: map[key].id || id || null, avatar: map[key].avatar || avatar, outOfTeam: map[key].outOfTeam || !!outOfTeam, lineId: map[key].lineId || lineId || '' };
   }
   Object.values(state.profiles || {}).forEach((p) => put(p.id || p.code, p.name, p.avatar, p.outOfTeam, p.lineId));
@@ -256,12 +265,73 @@ function peopleOptionsFromState(state) {
     put(CTRLS.orderBillProfileId(o), CTRLS.orderBillName(o), CTRLS.orderBillAvatar(o), CTRLS.orderIsOutOfTeam(o), o.billLineId || o.lineId);
     put(CTRLS.orderCreditProfileId(o), CTRLS.orderCreditName(o), o.creditToAvatar || o.avatar, false, '');
   });
-  return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
+  const people = Object.values(map).sort((a, b) => a.name.localeCompare(b.name) || String(a.id || '').localeCompare(String(b.id || '')));
+  const nameCounts = people.reduce((acc, p) => {
+    const k = norm(p.name);
+    acc[k] = (acc[k] || 0) + 1;
+    return acc;
+  }, {});
+  return people.map((p) => ({
+    ...p,
+    label: nameCounts[norm(p.name)] > 1 && p.id ? `${p.name} · ${String(p.id).replace(/^CAT-/, '')}` : p.name,
+  }));
 }
 
 function findPersonOption(people, nameOrId) {
   if (!nameOrId) return null;
-  return people.find((p) => p.id === nameOrId || p.name === nameOrId) || null;
+  const norm = (name) => (name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  return people.find((p) => p.id === nameOrId || p.key === nameOrId)
+    || people.find((p) => norm(p.name) === norm(nameOrId))
+    || null;
+}
+
+function BaristaPickItemSheet({ state, onPick, onClose }) {
+  function choose(item) {
+    onPick(item);
+    onClose();
+  }
+  const signatures = (state.signatureMenu || CTRLS.DEFAULT_SIGNATURE_MENU).filter((m) => CTRLS.isAvailable(m));
+  const asapItems = [...(state.asap || [])]
+    .filter((a) => CTRLS.isAvailable(a))
+    .sort((a, b) => CTRLS.ROAST_ORDER[CTRLS.itemRoast(a)] - CTRLS.ROAST_ORDER[CTRLS.itemRoast(b)] || a.name.localeCompare(b.name));
+
+  return (
+    <div className="sheet-backdrop" onClick={onClose} style={{ zIndex: 140 }}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()} style={{ maxHeight: '74vh' }}>
+        <div className="sheet-handle" />
+        <div className="sheet-title">
+          <span className="h-doodle" style={{ fontSize: 24 }}>pick a cup</span>
+          <button className="x-big" onClick={onClose}>×</button>
+        </div>
+        <div className="sheet-scroll no-scrollbar">
+          <div className="mono dim" style={{ marginBottom: 6 }}>signature</div>
+          {signatures.length === 0 && <div className="mono dim" style={{ padding: '8px 0' }}>no signature drinks available</div>}
+          {signatures.map((m) => (
+            <button key={m.id} className="asap-item" onClick={() => choose({ type: 'menu', refId: m.id, qty: 1 })}>
+              <div className="asap-left">
+                <div className="asap-name h-hand">{m.name}</div>
+                <div className="asap-notes">{m.tag}</div>
+                <div className="asap-meta mono"><span className={`roast-pill ${CTRLS.itemRoast(m)}`}>{CTRLS.itemRoast(m)}</span></div>
+              </div>
+              <div className="asap-price h-doodle">฿{m.price}</div>
+            </button>
+          ))}
+          <div className="mono dim" style={{ margin: '12px 0 6px' }}>asap menu</div>
+          {asapItems.length === 0 && <div className="mono dim" style={{ padding: '8px 0' }}>no asap beans available</div>}
+          {asapItems.map((a) => (
+            <button key={a.id} className="asap-item" onClick={() => choose({ type: 'asap', refId: a.id, qty: 1 })}>
+              <div className="asap-left">
+                <div className="asap-name h-hand">{a.name}</div>
+                <div className="asap-notes">{a.notes}</div>
+                <div className="asap-meta mono"><span className={`roast-pill ${CTRLS.itemRoast(a)}`}>{CTRLS.itemRoast(a)}</span></div>
+              </div>
+              <div className="asap-price h-doodle">฿{a.price}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function OrderEditSheet({ state, order, onSave, onCancelOrder, onClose }) {
@@ -320,8 +390,8 @@ function OrderEditSheet({ state, order, onSave, onCancelOrder, onClose }) {
           <label className="field-label">bill to</label>
           <input className="name-input" style={{ marginTop: 6 }} value={billName} onChange={(e) => { setBillName(e.target.value); setBillPersonId(''); }} placeholder="who pays" />
           <div className="quick-person-row">
-            {people.slice(0, 16).map((p) => (
-              <button key={'bill-' + (p.id || p.name)} className={`btn-mini ${billPersonId && billPersonId === p.id ? 'active' : ''}`} onClick={() => pickBill(p)}>{p.name}</button>
+            {people.map((p) => (
+              <button key={'bill-' + p.key} className={`btn-mini ${billPersonId && billPersonId === p.id ? 'active' : ''}`} onClick={() => pickBill(p)}>{p.label}</button>
             ))}
           </div>
           <div className="footnote mono" style={{ paddingTop: 6 }}>loyalty and history follow whoever pays</div>
@@ -416,8 +486,8 @@ function BaristaOrderSheet({ state, setState, dateIso, onClose }) {
           <label className="field-label">who pays / gets points</label>
           <input className="name-input" style={{ marginTop: 6 }} value={name} onChange={(e) => { setName(e.target.value); setPersonId(''); }} placeholder="name" />
           <div className="quick-person-row">
-            {people.slice(0, 16).map((p) => (
-              <button key={'manual-' + (p.id || p.name)} className={`btn-mini ${personId && personId === p.id ? 'active' : ''}`} onClick={() => pickPerson(p)}>{p.name}</button>
+            {people.map((p) => (
+              <button key={'manual-' + p.key} className={`btn-mini ${personId && personId === p.id ? 'active' : ''}`} onClick={() => pickPerson(p)}>{p.label}</button>
             ))}
           </div>
 
@@ -447,7 +517,7 @@ function BaristaOrderSheet({ state, setState, dateIso, onClose }) {
           <textarea className="setting-input" rows="2" value={note} onChange={(e) => setNote(e.target.value)} placeholder="late order, morning add-on..." />
 
           {picking && (
-            <PickItemSheet
+            <BaristaPickItemSheet
               state={state}
               onPick={(it) => { setItems((arr) => [...arr, it]); setPicking(false); }}
               onClose={() => setPicking(false)}

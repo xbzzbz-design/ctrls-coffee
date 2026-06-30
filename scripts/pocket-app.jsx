@@ -160,8 +160,27 @@ function PocketApp() {
     });
   }
   function claimNewProfile(name, avatar, meta) {
+    const normalizeName = (value) => (value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    const cleanName = name.trim();
+    const existing = Object.values(state.profiles || {}).find((p) => {
+      const id = p.id || p.code;
+      const deleted = id && (state.peopleMeta || {})[id]?.deleted;
+      return !deleted && normalizeName(p.name) === normalizeName(cleanName);
+    });
+    if (existing?.code) {
+      const updated = {
+        ...existing,
+        avatar: avatar || existing.avatar,
+        outOfTeam: meta ? !!meta.outOfTeam : !!existing.outOfTeam,
+        lineId: meta ? (meta.lineId || '') : (existing.lineId || ''),
+      };
+      setState((s) => CTRLS.upsertProfile(s, updated));
+      CTRLS.setActiveCode(existing.code);
+      setTick((t) => t + 1);
+      return;
+    }
     const existingCodes = Object.keys(state.profiles || {});
-    const p = CTRLS.newProfile(name, existingCodes);
+    const p = CTRLS.newProfile(cleanName, existingCodes);
     if (avatar) p.avatar = avatar;
     if (meta) { p.outOfTeam = !!meta.outOfTeam; p.lineId = meta.lineId || ''; }
     setState((s) => CTRLS.upsertProfile(s, p));
