@@ -148,8 +148,8 @@ function IdentityGate({ onClaim, onActivateCode }) {
 function WelcomeStrip({ profile, state, onOpenProfile }) {
   const rank = CTRLS.rankFor(profile.cupCount);
   const todayIso = CTRLS.isoToday();
-  const todayCount = (state.orders || []).filter((o) => o.name === profile.name && o.date === todayIso).length;
-  const upcoming = (state.orders || []).filter((o) => o.name === profile.name && o.date > todayIso).length;
+  const todayCount = (state.orders || []).filter((o) => CTRLS.isConfirmedOrder(o) && CTRLS.orderBelongsToProfile(o, profile) && o.date === todayIso).length;
+  const upcoming = (state.orders || []).filter((o) => CTRLS.isConfirmedOrder(o) && CTRLS.orderBelongsToProfile(o, profile) && o.date > todayIso).length;
   const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
   const statuses = [
     '🔄 syncing brain.exe…',
@@ -346,7 +346,7 @@ function DayPicker({ state, selectedDate, setSelectedDate, cart, profile }) {
               const sd = shortDate(iso);
               const myCartCount = (cart[iso] || []).length;
               const ordersHere = ordersByDate[iso] || [];
-              const others = ordersHere.filter((o) => o.name !== profile.name);
+              const others = ordersHere.filter((o) => !CTRLS.orderBelongsToProfile(o, profile));
               return (
                 <button key={iso} className={`daycard ${sel ? 'selected' : ''} ${!open ? 'closed' : ''}`} onClick={() => setSelectedDate(iso)}>
                   <div className="dow mono">{sd.dow}</div>
@@ -392,7 +392,7 @@ function DayPicker({ state, selectedDate, setSelectedDate, cart, profile }) {
               const today = c.iso === todayIso;
               const myCartCount = (cart[c.iso] || []).length;
               const ordersHere = ordersByDate[c.iso] || [];
-              const others = ordersHere.filter((o) => o.name !== profile.name);
+              const others = ordersHere.filter((o) => !CTRLS.orderBelongsToProfile(o, profile));
               return (
                 <button
                   key={i}
@@ -433,7 +433,7 @@ function CafeLounge({ state, selectedDate, profile }) {
       if (!byPerson[key]) {
         byPerson[key] = { key, name: o.name || 'someone', avatar: o.avatar, cups: 0, ts: o.ts || 0 };
       }
-      byPerson[key].cups += (o.items || []).length;
+      byPerson[key].cups += CTRLS.cupQty(o);
       // keep the most recent avatar
       if ((o.ts || 0) >= byPerson[key].ts) { byPerson[key].avatar = o.avatar; byPerson[key].ts = o.ts || 0; }
     });
@@ -757,7 +757,7 @@ function DoneSheet({ onClose, name, profile }) {
 // === Today/day items list — your stuff + who else ===
 function DayItemsList({ state, selectedDate, dayItems, onRemove, profile }) {
   const ordersByDay = (state.orders || []).filter((o) => CTRLS.isConfirmedOrder(o) && o.date === selectedDate);
-  const others = ordersByDay.filter((o) => o.name !== profile.name);
+  const others = ordersByDay.filter((o) => !CTRLS.orderBelongsToProfile(o, profile));
   const hasAnything = dayItems.length > 0 || others.length > 0;
   if (!hasAnything) return null;
   const sd = shortDate(selectedDate);
@@ -1034,17 +1034,24 @@ function GiftNotificationSheet({ gift, state, profile, onClaim, onDismiss }) {
 // === Main customer view ===
 function CustomerPocket({ state, setState, profile, setProfile, openProfile }) {
   const [cart, setCart] = useStored('ctrls_cart_v2', {});
-  const [selectedDate, setSelectedDate] = _usC(() => {
+  function defaultCustomerDate(currentState) {
     const todayIso = CTRLS.isoToday();
-    if (CTRLS.canOrderDate(state, todayIso)) return todayIso;
+    const hasTodayOrders = (currentState.orders || []).some((o) => CTRLS.isConfirmedOrder(o) && o.date === todayIso);
+    if (CTRLS.isOpen(currentState, todayIso) || hasTodayOrders) return todayIso;
     for (let i = 1; i < 14; i++) {
       const d = new Date();
       d.setDate(d.getDate() + i);
       const iso = isoFromDate(d);
-      if (CTRLS.canOrderDate(state, iso)) return iso;
+      if (CTRLS.canOrderDate(currentState, iso)) return iso;
     }
     return todayIso;
-  });
+  }
+  const [selectedDate, setSelectedDateRaw] = _usC(() => defaultCustomerDate(state));
+  const selectedTouchedRef = _urC(false);
+  function setSelectedDate(dateIso) {
+    selectedTouchedRef.current = true;
+    setSelectedDateRaw(dateIso);
+  }
   const [showCart, setShowCart] = _usC(false);
   const [checkout, setCheckout] = _usC(null);
   const [subSheet, setSubSheet] = _usC(null);
@@ -1058,6 +1065,12 @@ function CustomerPocket({ state, setState, profile, setProfile, openProfile }) {
   const shopClosed = !CTRLS.isOpen(state, selectedDate);
   const orderClosed = !shopClosed && !CTRLS.canOrderDate(state, selectedDate);
   const isClosed = shopClosed || orderClosed;
+
+  _ueC(() => {
+    if (selectedTouchedRef.current) return;
+    const nextDefault = defaultCustomerDate(state);
+    if (nextDefault !== selectedDate) setSelectedDateRaw(nextDefault);
+  }, [state.orders, state.openDays, state.openDates, state.closedDates, selectedDate]);
 
   // Pending gift for this user
   const pendingGift = _umC(() =>

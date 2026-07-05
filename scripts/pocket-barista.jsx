@@ -614,7 +614,7 @@ function BaristaOrderSheet({ state, setState, dateIso, onClose }) {
       note: note.trim(),
       ts: Date.now(),
     };
-    setState({ ...state, orders: [...state.orders, order] });
+    setState((s) => ({ ...s, orders: [...(s.orders || []), order] }));
     onClose();
   }
 
